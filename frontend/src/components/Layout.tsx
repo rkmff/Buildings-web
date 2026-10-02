@@ -8,6 +8,7 @@ const NAV = [
   { to: '/objekte', label: 'Kunden & Anlagen', icon: 'gebaeude' },
   { to: '/auftraege', label: 'Aufträge', icon: 'auftrag' },
   { to: '/wartung', label: 'Wartung', icon: 'wartung' },
+  { to: '/wartungsvorlagen', label: 'Wartungsvorlagen', icon: 'liste' },
   { to: '/wochenplanung', label: 'Wochenplanung', icon: 'kalender' },
   { to: '/mitarbeiter', label: 'Mitarbeiter', icon: 'team' },
   { to: '/ausruestung', label: 'Ausrüstung', icon: 'werkzeug' },

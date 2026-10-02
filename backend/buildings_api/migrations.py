@@ -15,6 +15,22 @@ MIGRATIONS = [
         )
         """,
     ),
+    (
+        "002_wartung_vdma",
+        """
+        ALTER TABLE wartungsaufgabenvorlagen ADD COLUMN vdma_position TEXT;
+        ALTER TABLE wartungsaufgabenvorlagen ADD COLUMN taetigkeit TEXT;
+        ALTER TABLE "tblAufTräge" ADD COLUMN wartung_status TEXT;
+        CREATE TABLE IF NOT EXISTS wartung_zeiten (
+            zeit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            auftrag_id INTEGER NOT NULL REFERENCES "tblAufTräge"(ATID) ON DELETE CASCADE,
+            mitarbeiter_id INTEGER REFERENCES "tblMitarbeiter"(TCID) ON DELETE SET NULL,
+            start TEXT NOT NULL,
+            ende TEXT
+        );
+        CREATE INDEX IF NOT EXISTS ix_wartung_zeiten_auftrag ON wartung_zeiten(auftrag_id);
+        """,
+    ),
 ]
 
 

@@ -13,6 +13,7 @@ import Mitarbeiter from './pages/Mitarbeiter'
 import Stammdaten from './pages/Stammdaten'
 import Wochenplanung from './pages/Wochenplanung'
 import WartungAusfuehren, { WartungListe } from './pages/Wartung'
+import Wartungsvorlagen from './pages/Wartungsvorlagen'
 
 export default function App() {
   const { user, laden } = useAuth()
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="auftraege/:id" element={<Auftraege />} />
         <Route path="wartung" element={<WartungListe />} />
         <Route path="wartung/:id" element={<WartungAusfuehren key="wartung" />} />
+        <Route path="wartungsvorlagen" element={<Wartungsvorlagen />} />
         <Route path="wochenplanung" element={<Wochenplanung />} />
         <Route path="mitarbeiter" element={<Mitarbeiter />} />
         <Route path="mitarbeiter/:id" element={<Mitarbeiter />} />
