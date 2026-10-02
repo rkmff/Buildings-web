@@ -616,3 +616,16 @@ a.status-pille.verwendung:hover { background: var(--accent-soft); color: var(--a
   .team-name-zelle { padding: 0 6px 0 8px; }
   .team-name-zelle .avatar { display: none; }
 }
+
+/* Kunden & Anlagen bearbeiten */
+.formular-raster { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; align-items: end; }
+.formular-raster .breit { grid-column: 1 / -1; }
+.formular-raster .schalter { min-height: 38px; align-self: end; }
+.tab-aktionen { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.baum-kopf-zeile { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.zeile-klickbar { cursor: pointer; }
+.zeile-klickbar:hover td { background: var(--surface-2); }
+@media (max-width: 600px) {
+  .formular-raster { grid-template-columns: 1fr; }
+}
+.protokoll { margin-top: 10px; }

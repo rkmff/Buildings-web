@@ -48,10 +48,10 @@ Umgebungsvariablen: `BUILDINGS_ROOT`, `BUILDINGS_DB`, `BUILDINGS_DATA_DIR`, `BUI
 
 Fertig: Anmeldung (bestehende Passwörter), Seitenleiste, Einstellungen pro Benutzer
 (Hell/Dunkel/System, Akzentfarbe, Anzahl Wochen), **Meine Seite** (Planung per Drag & Drop),
-**Kunden & Anlagen** (Objektbaum, nur lesend), **Aufträge** (Board, Liste, Detailspalte),
+**Kunden & Anlagen** (Objektbaum; Kunden, Systeme und Ansprechpartner pflegen Admins und Dispatcher, ISPs, Anlagen und Geräte auch die Techniker; Erstellt/Geändert wird je Datensatz angezeigt), **Aufträge** (Board, Liste, Detailspalte),
 **Wartung** (Ausführung mit Ergebnissen, Messwerten, Kommentaren und Fotos),
 **Wochenplanung** (Team-Raster mit Aufträgen zum Ziehen), **Mitarbeiter** (Person, Zugang,
 Reihenfolge der Wochenplanung, Schulungen, Systeme, Ausrüstung) und **Stammdaten**
 (Auswahllisten mit Verwendungsanzeige).
 
-Als Nächstes: Berichte, Ausrüstung, Bearbeiten in Kunden & Anlagen, Wartungsvorlagen, Excel-Import.
+Als Nächstes: Berichte, Ausrüstung, Wartungsvorlagen, Excel-Import.
