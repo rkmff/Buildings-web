@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import Icon from '../components/Icon'
+import ObjektDialog, { type ObjektTyp } from '../components/ObjektDialog'
 import { lang } from '../datum'
 import type { Foto } from '../types'
 
@@ -14,6 +15,14 @@ type Typ = 'kunde' | 'system' | 'isp' | 'anlage' | 'geraet'
 
 const TYP_KUERZEL: Record<Typ, string> = { kunde: 'KU', system: 'KS', isp: 'IS', anlage: 'AN', geraet: 'GR' }
 const TYP_NAME: Record<Typ, string> = { kunde: 'Kunde', system: 'Kundensystem', isp: 'ISP', anlage: 'Anlage', geraet: 'Gerät' }
+
+/** Offener Bearbeiten- oder Anlegen-Dialog */
+interface DialogZustand {
+  typ: ObjektTyp
+  id?: number
+  elternId?: number | null
+  zuordnung?: { kunde_id?: number; system_id?: number }
+}
 
 function schluessel(typ: Typ, id: number | null) {
   return `${typ}:${id}`
@@ -71,10 +80,17 @@ export default function KundenAnlagen() {
   const [kunden, setKunden] = useState<BaumKunde[] | null>(null)
   const [offen, setOffen] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState('')
+  const [darf, setDarf] = useState(false)
+  const [neuerKunde, setNeuerKunde] = useState(false)
+  const navigate = useNavigate()
 
-  useEffect(() => {
-    api.get<{ kunden: BaumKunde[] }>('/api/baum').then((r) => setKunden(r.kunden))
+  const ladenBaum = useCallback(() => {
+    api.get<{ kunden: BaumKunde[]; darf_bearbeiten: boolean }>('/api/baum').then((r) => {
+      setKunden(r.kunden)
+      setDarf(r.darf_bearbeiten)
+    })
   }, [])
+  useEffect(ladenBaum, [ladenBaum])
 
   useEffect(() => {
     if (!kunden || !typ || id === undefined) return
@@ -121,7 +137,14 @@ export default function KundenAnlagen() {
     <div className={`objekte${typ ? ' mit-detail' : ''}`}>
       <aside className="baum" aria-label="Objektbaum">
         <div className="baum-kopf">
-          <h1 className="titel-klein">Kunden &amp; Anlagen</h1>
+          <div className="baum-kopf-zeile">
+            <h1 className="titel-klein">Kunden &amp; Anlagen</h1>
+            {darf && (
+              <button type="button" className="knopf klein" onClick={() => setNeuerKunde(true)}>
+                <Icon name="plus" size={15} /> Kunde
+              </button>
+            )}
+          </div>
           <label className="suchfeld">
             <Icon name="suche" size={16} />
             <input type="search" aria-label="Objekte filtern" placeholder="Kunde, System, ISP, Anlage" value={filter} onChange={(e) => setFilter(e.target.value)} />
@@ -155,31 +178,66 @@ export default function KundenAnlagen() {
       </aside>
       <section className="objekt-detail">
         {typ && id !== undefined ? (
-          <Detail key={`${typ}-${id}`} typ={typ} id={id} />
+          <Detail key={`${typ}-${id}`} typ={typ} id={id} darf={darf} onGeaendert={ladenBaum} />
         ) : (
           <div className="karte leer">Wähle links einen Kunden, ein System, eine ISP oder eine Anlage.</div>
         )}
       </section>
+      {neuerKunde && (
+        <ObjektDialog
+          typ="kunde"
+          onClose={() => setNeuerKunde(false)}
+          onGespeichert={(nid) => {
+            setNeuerKunde(false)
+            ladenBaum()
+            navigate(`/objekte/kunde/${nid}`)
+          }}
+        />
+      )}
     </div>
   )
 }
 
 const ENDPUNKT: Record<Typ, string> = { kunde: 'kunden', system: 'systeme', isp: 'isps', anlage: 'anlagen', geraet: 'geraete' }
 
-function Detail({ typ, id }: { typ: Typ; id: number }) {
+/** Wohin nach dem Löschen: zum übergeordneten Objekt */
+function elternPfad(typ: Typ, d: any): string {
+  if (typ === 'system' && d.system.KSKundeID) return `/objekte/kunde/${d.system.KSKundeID}`
+  if (typ === 'isp') return `/objekte/system/${d.isp.ISKS}`
+  if (typ === 'anlage') return `/objekte/isp/${d.anlage.isp_id}`
+  if (typ === 'geraet') return `/objekte/anlage/${d.geraet.anlage_id}`
+  return '/objekte'
+}
+
+function Detail({ typ, id, darf, onGeaendert }: { typ: Typ; id: number; darf: boolean; onGeaendert: () => void }) {
   const [daten, setDaten] = useState<any>(null)
   const [fehler, setFehler] = useState('')
   const [tab, setTab] = useState(0)
+  const [dialog, setDialog] = useState<DialogZustand | null>(null)
   const navigate = useNavigate()
 
-  useEffect(() => {
+  const laden = useCallback(() => {
     api.get(`/api/${ENDPUNKT[typ]}/${id}`).then(setDaten).catch((e) => setFehler(e.message))
   }, [typ, id])
+  useEffect(laden, [laden])
 
   if (fehler) return <div className="karte leer">{fehler}</div>
   if (!daten) return <p className="gedaempft">Wird geladen …</p>
 
-  const sicht = ansicht(typ, daten)
+  const gespeichert = (z: DialogZustand, nid: number) => {
+    setDialog(null)
+    onGeaendert()
+    if (!z.id && z.typ !== 'ansprechpartner') navigate(`/objekte/${z.typ}/${nid}`)
+    else laden()
+  }
+  const geloescht = (z: DialogZustand) => {
+    setDialog(null)
+    onGeaendert()
+    if (z.typ === typ && z.id === id) navigate(elternPfad(typ, daten))
+    else laden()
+  }
+
+  const sicht = ansicht(typ, daten, { darf, oeffne: setDialog })
   const tabs = sicht.tabs.filter(Boolean) as Tab[]
   const aktiverTab = tabs[Math.min(tab, tabs.length - 1)]
 
@@ -204,6 +262,9 @@ function Detail({ typ, id }: { typ: Typ; id: number }) {
           <h1 className="seitentitel">{sicht.titel}</h1>
           {sicht.untertitel && <p className="gedaempft">{sicht.untertitel}</p>}
         </div>
+        {darf && (
+          <button type="button" className="knopf" onClick={() => setDialog({ typ, id })}>Bearbeiten</button>
+        )}
         {daten.fotos?.[0] && (
           <img className="uebersichtsfoto" src={`/api/fotos/${daten.fotos[0].id}/datei`} alt={daten.fotos[0].beschreibung || 'Übersichtsfoto'} />
         )}
@@ -225,14 +286,36 @@ function Detail({ typ, id }: { typ: Typ; id: number }) {
           </button>
         ))}
       </div>
-      <div className="karte tab-inhalt" role="tabpanel">{aktiverTab?.inhalt}</div>
+      <div className="karte tab-inhalt" role="tabpanel">
+        {aktiverTab?.aktion && <div className="tab-aktionen">{aktiverTab.aktion}</div>}
+        {aktiverTab?.inhalt}
+      </div>
+      {dialog && (
+        <ObjektDialog
+          {...dialog}
+          onClose={() => setDialog(null)}
+          onGespeichert={(nid) => gespeichert(dialog, nid)}
+          onGeloescht={() => geloescht(dialog)}
+        />
+      )}
     </div>
   )
 }
 
-interface Tab { label: string; anzahl: number; inhalt: ReactNode }
+interface Tab { label: string; anzahl: number; inhalt: ReactNode; aktion?: ReactNode }
 
-function Tabelle({ spalten, zeilen, leer }: { spalten: string[]; zeilen: ReactNode[][]; leer: string }) {
+interface Kontext { darf: boolean; oeffne: (z: DialogZustand) => void }
+
+function NeuKnopf({ ctx, label, zustand }: { ctx: Kontext; label: string; zustand: DialogZustand }) {
+  if (!ctx.darf) return null
+  return (
+    <button type="button" className="knopf klein" onClick={() => ctx.oeffne(zustand)}>
+      <Icon name="plus" size={15} /> {label}
+    </button>
+  )
+}
+
+function Tabelle({ spalten, zeilen, leer, onZeile }: { spalten: string[]; zeilen: ReactNode[][]; leer: string; onZeile?: (i: number) => void }) {
   if (!zeilen.length) return <p className="gedaempft">{leer}</p>
   return (
     <div className="tabelle-rahmen">
@@ -242,7 +325,10 @@ function Tabelle({ spalten, zeilen, leer }: { spalten: string[]; zeilen: ReactNo
         </thead>
         <tbody>
           {zeilen.map((z, i) => (
-            <tr key={i}>{z.map((c, j) => <td key={j}>{c}</td>)}</tr>
+            <tr key={i} className={onZeile ? 'zeile-klickbar' : undefined} onClick={onZeile ? () => onZeile(i) : undefined}
+              title={onZeile ? 'Zum Bearbeiten klicken' : undefined}>
+              {z.map((c, j) => <td key={j}>{c}</td>)}
+            </tr>
           ))}
         </tbody>
       </table>
@@ -269,20 +355,22 @@ function Fotos({ fotos }: { fotos: Foto[] }) {
   )
 }
 
-function ansprechpartnerTab(liste: any[]): Tab {
+function ansprechpartnerTab(liste: any[], ctx: Kontext, zuordnung: { kunde_id?: number; system_id?: number }): Tab {
   return {
     label: 'Ansprechpartner',
     anzahl: liste.length,
+    aktion: <NeuKnopf ctx={ctx} label="Ansprechpartner" zustand={{ typ: 'ansprechpartner', zuordnung }} />,
     inhalt: (
       <Tabelle
         spalten={['Name', 'Funktion', 'Telefon', 'Mobil', 'E-Mail']}
         leer="Keine Ansprechpartner hinterlegt."
+        onZeile={ctx.darf ? (i) => ctx.oeffne({ typ: 'ansprechpartner', id: liste[i].id }) : undefined}
         zeilen={liste.map((a) => [
           `${a.vorname ?? ''} ${a.nachname ?? ''}`.trim(),
           a.funktion,
-          a.telefon && <a href={`tel:${a.telefon}`}>{a.telefon}</a>,
-          a.mobil && <a href={`tel:${a.mobil}`}>{a.mobil}</a>,
-          a.email && <a href={`mailto:${a.email}`}>{a.email}</a>,
+          a.telefon && <a href={`tel:${a.telefon}`} onClick={(e) => e.stopPropagation()}>{a.telefon}</a>,
+          a.mobil && <a href={`tel:${a.mobil}`} onClick={(e) => e.stopPropagation()}>{a.mobil}</a>,
+          a.email && <a href={`mailto:${a.email}`} onClick={(e) => e.stopPropagation()}>{a.email}</a>,
         ])}
       />
     ),
@@ -293,7 +381,7 @@ function fotosTab(fotos: Foto[]): Tab {
   return { label: 'Fotos', anzahl: fotos.length, inhalt: <Fotos fotos={fotos} /> }
 }
 
-function ansicht(typ: Typ, d: any): {
+function ansicht(typ: Typ, d: any, ctx: Kontext): {
   titel: string
   untertitel?: string
   pfad: { label: string; to?: string }[]
@@ -317,6 +405,7 @@ function ansicht(typ: Typ, d: any): {
           {
             label: 'Systeme',
             anzahl: d.systeme.length,
+            aktion: <NeuKnopf ctx={ctx} label="System" zustand={{ typ: 'system', elternId: k.KUID }} />,
             inhalt: (
               <Tabelle
                 spalten={['System', 'Ort', 'Niederlassung', 'ISPs']}
@@ -325,7 +414,7 @@ function ansicht(typ: Typ, d: any): {
               />
             ),
           },
-          ansprechpartnerTab(d.ansprechpartner),
+          ansprechpartnerTab(d.ansprechpartner, ctx, { kunde_id: k.KUID }),
         ],
       }
     }
@@ -347,6 +436,7 @@ function ansicht(typ: Typ, d: any): {
           {
             label: 'ISPs',
             anzahl: d.isps.length,
+            aktion: <NeuKnopf ctx={ctx} label="ISP" zustand={{ typ: 'isp', elternId: s.KSID }} />,
             inhalt: (
               <Tabelle
                 spalten={['ISP', 'Beschreibung', 'Typ', 'BMS', 'Anlagen']}
@@ -366,7 +456,7 @@ function ansicht(typ: Typ, d: any): {
               />
             ),
           },
-          ansprechpartnerTab(d.ansprechpartner),
+          ansprechpartnerTab(d.ansprechpartner, ctx, { system_id: s.KSID }),
           {
             label: 'Techniker',
             anzahl: d.mitarbeiter.length,
@@ -397,6 +487,7 @@ function ansicht(typ: Typ, d: any): {
           {
             label: 'Anlagen',
             anzahl: d.anlagen.length,
+            aktion: <NeuKnopf ctx={ctx} label="Anlage" zustand={{ typ: 'anlage', elternId: i.ISID }} />,
             inhalt: (
               <Tabelle
                 spalten={['Anlage', 'Beschreibung', 'Typ', 'Geräte']}
@@ -425,6 +516,7 @@ function ansicht(typ: Typ, d: any): {
           {
             label: 'Geräte',
             anzahl: d.geraete.length,
+            aktion: <NeuKnopf ctx={ctx} label="Gerät" zustand={{ typ: 'geraet', elternId: a.ANID }} />,
             inhalt: (
               <Tabelle
                 spalten={['Gerät', 'BMKZ', 'Art', 'Hersteller', 'Typ', 'Letztes Ergebnis']}
@@ -460,7 +552,7 @@ function ansicht(typ: Typ, d: any): {
           ['Hersteller', g.GRHersteller],
           ['Typ', g.GRTyp],
           ['Einbauort', g.GREinbauort],
-          ['Baujahr', g.GRBaujahr],
+          ['Baujahr', g.GRBaujahr || null],
           ['Leistung', g.GRLeistung],
           ['Nennleistung', g.GRNennleistung],
           ['Nennstrom', g.GRNennstrom],

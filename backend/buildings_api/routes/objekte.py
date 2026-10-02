@@ -1,7 +1,7 @@
 """Kunden & Anlagen: Objektbaum und Detailansichten (Kunde, System, ISP, Anlage, Gerät)."""
 from flask import Blueprint, abort, current_app, send_file
 
-from ..auth import login_required
+from ..auth import has_full_access, login_required
 from ..db import get_db, row, rows
 
 bp = Blueprint("objekte", __name__)
@@ -60,7 +60,7 @@ def baum():
     ohne_kunde = [s for liste in by_kunde.values() for s in liste]
     if ohne_kunde:
         kunden.append({"id": None, "name": "Ohne Kunde", "systeme": ohne_kunde})
-    return {"ok": True, "kunden": kunden}
+    return {"ok": True, "kunden": kunden, "darf_bearbeiten": has_full_access()}
 
 
 @bp.get("/kunden/<int:kunde_id>")
@@ -85,7 +85,7 @@ def kunde(kunde_id: int):
         "ansprechpartner": rows(
             db.execute(
                 """SELECT APID AS id, APVorname AS vorname, APNachname AS nachname, APFunktion AS funktion,
-                          APTelefon AS telefon, APMobiltelefon AS mobil, APEmail AS email
+                          APTelefon AS telefon, APMobiltelefon AS mobil, APEmail AS email, APKommentar AS kommentar
                    FROM tblAnsprechpartner WHERE APKunde=? ORDER BY APNachname COLLATE NOCASE""",
                 (kunde_id,),
             )
@@ -140,7 +140,7 @@ def system(system_id: int):
         "ansprechpartner": rows(
             db.execute(
                 """SELECT APID AS id, APVorname AS vorname, APNachname AS nachname, APFunktion AS funktion,
-                          APTelefon AS telefon, APMobiltelefon AS mobil, APEmail AS email
+                          APTelefon AS telefon, APMobiltelefon AS mobil, APEmail AS email, APKommentar AS kommentar
                    FROM tblAnsprechpartner WHERE APKS=? ORDER BY APNachname COLLATE NOCASE""",
                 (system_id,),
             )

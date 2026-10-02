@@ -333,3 +333,61 @@ def test_stammdaten(client):
     client.post("/api/auth/logout")
     login(client, "FRF")
     assert client.post("/api/stammdaten/auftragstypen", json={"TAName": "X", "TAPlanungsfarbe": "#123456"}).status_code == 403
+
+
+def test_objekte_bearbeiten(client):
+    login(client, "RKO")
+    assert client.get("/api/baum").json["darf_bearbeiten"] is True
+    r = client.post("/api/objekte/kunde", json={"werte": {"KUName": "Testkunde GmbH", "KUOrt": "Köln"}})
+    assert r.status_code == 201, r.json
+    kid = r.json["id"]
+    assert client.post("/api/objekte/kunde", json={"werte": {"KUName": "  "}}).status_code == 400
+
+    form = client.get("/api/objekt-formular/system").json
+    nl = form["auswahl"]["niederlassungen"][0]["id"]
+    r = client.post("/api/objekte/system", json={"eltern_id": kid, "werte": {"KSName": "Halle 1", "KSNiederlassung": nl}})
+    assert r.status_code == 201, r.json
+    sid = r.json["id"]
+    assert client.get(f"/api/systeme/{sid}").json["system"]["KSKunde"] == "Testkunde GmbH"
+    assert client.post("/api/objekte/system", json={"eltern_id": 999999, "werte": {"KSName": "X"}}).status_code == 400
+    assert client.post("/api/objekte/system", json={"eltern_id": kid, "werte": {"KSName": "X", "KSDDC": 999999}}).status_code == 400
+
+    isp = client.post("/api/objekte/isp", json={"eltern_id": sid, "werte": {"ISName": "ISP 01"}}).json["id"]
+    anlage = client.post("/api/objekte/anlage", json={"eltern_id": isp, "werte": {"ANName": "Lüftung"}}).json["id"]
+    r = client.post("/api/objekte/geraet", json={"eltern_id": anlage, "werte": {
+        "GRName": "Zuluftventilator", "GRBMKZ": "LA01-M01", "GRNennstrom": "4,5", "GRBaujahr": "2019", "GRWartungspflichtig": True}})
+    assert r.status_code == 201, r.json
+    gid = r.json["id"]
+    g = client.get(f"/api/geraete/{gid}").json["geraet"]
+    assert (g["GRNennstrom"], g["GRBaujahr"], g["GRWartungspflichtig"]) == (4.5, 2019, 1)
+    assert client.put(f"/api/objekte/geraet/{gid}", json={"werte": {"GRBaujahr": "19,5"}}).status_code == 400
+
+    # Umbenennen des Kunden zieht den Namen im System nach
+    assert client.put(f"/api/objekte/kunde/{kid}", json={"werte": {"KUName": "Testkunde AG"}}).status_code == 200
+    assert client.get(f"/api/systeme/{sid}").json["system"]["KSKunde"] == "Testkunde AG"
+
+    ap = client.post("/api/objekte/ansprechpartner", json={"system_id": sid, "werte": {"APNachname": "Meier", "APTelefon": "0221 1"}})
+    assert ap.status_code == 201
+    assert client.get(f"/api/systeme/{sid}").json["ansprechpartner"][0]["nachname"] == "Meier"
+    assert client.post("/api/objekte/ansprechpartner", json={"werte": {"APNachname": "X"}}).status_code == 400
+
+    # Verwendete Objekte lassen sich nicht löschen
+    form = client.get(f"/api/objekt-formular/system?id={sid}").json
+    assert {v["label"] for v in form["verwendung"]} == {"ISP", "Ansprechpartner"}
+    r = client.delete(f"/api/objekte/kunde/{kid}")
+    assert r.status_code == 409 and "1 System" in r.json["message"]
+    assert client.delete(f"/api/objekte/anlage/{anlage}").status_code == 409
+
+    # Umhängen: Gerät in eine andere Anlage
+    anlage2 = client.post("/api/objekte/anlage", json={"eltern_id": isp, "werte": {"ANName": "Heizung"}}).json["id"]
+    assert client.put(f"/api/objekte/geraet/{gid}", json={"eltern_id": anlage2, "werte": {}}).status_code == 200
+    assert client.get(f"/api/geraete/{gid}").json["geraet"]["anlage_id"] == anlage2
+    assert client.delete(f"/api/objekte/anlage/{anlage}").status_code == 200
+
+    for typ, pk in (("geraet", gid), ("anlage", anlage2), ("isp", isp), ("ansprechpartner", ap.json["id"]), ("system", sid), ("kunde", kid)):
+        assert client.delete(f"/api/objekte/{typ}/{pk}").status_code == 200, typ
+
+    client.post("/api/auth/logout")
+    login(client, "FRF")
+    assert client.get("/api/baum").json["darf_bearbeiten"] is False
+    assert client.post("/api/objekte/kunde", json={"werte": {"KUName": "X"}}).status_code == 403

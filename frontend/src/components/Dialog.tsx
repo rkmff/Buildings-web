@@ -11,13 +11,17 @@ interface Props {
 
 export default function Dialog({ titel, onClose, children, aktionen, breit }: Props) {
   const ref = useRef<HTMLDivElement>(null)
+  // onClose ist meist eine Inline-Funktion; über die Ref läuft der Effekt nur beim Öffnen,
+  // sonst würde jeder Tastendruck den Fokus auf das erste Feld zurücksetzen.
+  const schliessen = useRef(onClose)
+  schliessen.current = onClose
 
   useEffect(() => {
     const vorher = document.activeElement as HTMLElement | null
     const erstes = ref.current?.querySelector<HTMLElement>('input, select, textarea, button:not(.dialog-schliessen)')
     erstes?.focus()
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') schliessen.current()
     }
     ref.current?.addEventListener('keydown', onKey)
     const el = ref.current
@@ -25,7 +29,7 @@ export default function Dialog({ titel, onClose, children, aktionen, breit }: Pr
       el?.removeEventListener('keydown', onKey)
       vorher?.focus?.()
     }
-  }, [onClose])
+  }, [])
 
   return (
     <div className="dialog-hintergrund" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
