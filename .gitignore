@@ -1,0 +1,18 @@
+# Produktive Daten und Konfiguration gehören nicht ins Repo
+data/
+config/
+backups/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+backend/tests/fixtures/
+
+# Build und Umgebung
+frontend/node_modules/
+frontend/dist/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.tsbuildinfo
