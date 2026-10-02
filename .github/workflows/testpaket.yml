@@ -1,10 +1,10 @@
 # Baut das Testpaket und stellt es als Release "testpaket" bereit.
-# Ausgeloest durch Push auf den Branch "testpaket" (zeigt auf den Stand, der getestet werden soll).
+# Ausgeloest durch Push auf den Branch "testlauf" (zeigt auf den Stand, der getestet werden soll).
 name: Testpaket
 
 on:
   push:
-    branches: ['testpaket']
+    branches: ['testlauf']
   workflow_dispatch:
 
 permissions:
