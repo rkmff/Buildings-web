@@ -52,6 +52,6 @@ Fertig: Anmeldung (bestehende Passwörter), Seitenleiste, Einstellungen pro Benu
 **Wartung** (Ausführung mit Ergebnissen, Messwerten, Kommentaren und Fotos),
 **Wochenplanung** (Team-Raster mit Aufträgen zum Ziehen), **Mitarbeiter** (Person, Zugang,
 Reihenfolge der Wochenplanung, Schulungen, Systeme, Ausrüstung) und **Stammdaten**
-(Auswahllisten mit Verwendungsanzeige).
+(Auswahllisten mit Verwendungsanzeige), **Ausrüstung** (meine und alle, Übergaben mit Annahme, Kalibrierungen, Fotos, Dokumente).
 
-Als Nächstes: Berichte, Ausrüstung, Wartungsvorlagen, Excel-Import.
+Als Nächstes: Wartungsplanung, Berichte, Wartungsvorlagen, Excel-Import.

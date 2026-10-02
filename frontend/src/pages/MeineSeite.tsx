@@ -10,6 +10,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { api, ApiError } from '../api'
 import { useAuth } from '../auth'
 import Bausteine from '../components/Bausteine'
@@ -246,11 +247,12 @@ export default function MeineSeite() {
         <section className="karte">
           <div className="karte-kopf">
             <h2 className="abschnitt-titel">Meine Ausrüstung <span className="zaehler">{uebersicht?.ausruestung.length ?? 0}</span></h2>
+            <Link to="/ausruestung" className="klein">Alle anzeigen</Link>
           </div>
           {offeneUebergaben.length > 0 && (
-            <div className="hinweis-box">
+            <Link to="/ausruestung" className="hinweis-box block">
               {offeneUebergaben.length === 1 ? 'Eine Übergabe wartet' : `${offeneUebergaben.length} Übergaben warten`} auf deine Bestätigung.
-            </div>
+            </Link>
           )}
           {uebersicht?.ausruestung.length === 0 && <p className="gedaempft">Dir ist keine Ausrüstung zugeordnet.</p>}
           <ul className="liste">
@@ -259,7 +261,7 @@ export default function MeineSeite() {
               return (
                 <li key={r.id} className="liste-eintrag zeile-zwischen">
                   <span>
-                    <strong>{r.name}</strong>
+                    <Link to={`/ausruestung/${r.id}`}><strong>{r.name}</strong></Link>
                     <small className="gedaempft block">{[r.hersteller, r.typ].filter(Boolean).join(' ')}</small>
                   </span>
                   {r.naechste_pruefung && (

@@ -376,6 +376,13 @@ def fotos_hochladen(wid: int):
         raise Eingabefehler("Bitte mindestens ein Foto auswählen.")
     db = get_db()
     ordner, ids = _ordner(db, wid)
+    neu = fotos_speichern(db, dateien, ordner, ids)
+    db.commit()
+    return {"ok": True, "ids": neu}
+
+
+def fotos_speichern(db, dateien, ordner: list[str], ids: dict) -> list[int]:
+    """Speichert Fotos im Fotoordner (gleiche Struktur wie bisher) und legt die web_fotos-Zeilen an."""
     root = current_app.config["SETTINGS"].photos_path
     zielordner = root.joinpath(*ordner)
     zielordner.mkdir(parents=True, exist_ok=True)
@@ -395,23 +402,19 @@ def fotos_hochladen(wid: int):
         except Eingabefehler:
             ziel.unlink(missing_ok=True)
             raise
+        werte = {
+            **ids,
+            "originalname": datei.filename[:255],
+            "dateiname": name,
+            "relative_path": "/".join(["uploads", "fotos", *ordner, name]),
+            "aufnahmedatum": datum,
+            "hochgeladen_am": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
         cur = db.execute(
-            """INSERT INTO web_fotos (kunden_system_id, isp_id, anlage_id, geraet_id, auftrag_id, wartungsaufgabe_id,
-                      originalname, dateiname, relative_path, aufnahmedatum, hochgeladen_am)
-               VALUES (:kunden_system_id, :isp_id, :anlage_id, :geraet_id, :auftrag_id, :wartungsaufgabe_id,
-                       :originalname, :dateiname, :relative_path, :aufnahmedatum, :hochgeladen_am)""",
-            {
-                **ids,
-                "originalname": datei.filename[:255],
-                "dateiname": name,
-                "relative_path": "/".join(["uploads", "fotos", *ordner, name]),
-                "aufnahmedatum": datum,
-                "hochgeladen_am": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            },
+            f"INSERT INTO web_fotos ({', '.join(werte)}) VALUES ({', '.join(':' + k for k in werte)})", werte
         )
         neu.append(cur.lastrowid)
-    db.commit()
-    return {"ok": True, "ids": neu}
+    return neu
 
 
 def _foto(db, fid: int):

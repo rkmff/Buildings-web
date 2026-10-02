@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth'
 import Layout from './components/Layout'
+import Ausruestung from './pages/Ausruestung'
 import Auftraege from './pages/Auftraege'
 import Einstellungen from './pages/Einstellungen'
 import KundenAnlagen from './pages/KundenAnlagen'
@@ -35,7 +36,8 @@ export default function App() {
         <Route path="wochenplanung" element={<Wochenplanung />} />
         <Route path="mitarbeiter" element={<Mitarbeiter />} />
         <Route path="mitarbeiter/:id" element={<Mitarbeiter />} />
-        <Route path="ausruestung" element={<Platzhalter titel="Ausrüstung" />} />
+        <Route path="ausruestung" element={<Ausruestung />} />
+        <Route path="ausruestung/:id" element={<Ausruestung />} />
         <Route path="berichte" element={<Platzhalter titel="Berichte" />} />
         <Route path="stammdaten" element={<Stammdaten />} />
         <Route path="stammdaten/:slug" element={<Stammdaten />} />
