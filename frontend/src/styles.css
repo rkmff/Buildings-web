@@ -768,3 +768,7 @@ a.status-pille.verwendung:hover { background: var(--accent-soft); color: var(--a
   .board-spalte.breit .board-karten { grid-template-columns: 1fr; }
   .hauptfoto img { width: 88px; height: 66px; }
 }
+.abwesenheit-chip.kurz { min-width: 34px; min-height: 30px; padding: 4px 8px; justify-content: center; font-size: 13px; font-family: var(--mono, ui-monospace, monospace); }
+.abschnitt-kopf { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: -6px; }
+/* Start: Karten oben kompakt halten, damit die Planung darunter sichtbar bleibt */
+.meine-seite .karten-raster .liste { max-height: 300px; overflow-y: auto; }

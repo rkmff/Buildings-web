@@ -51,13 +51,11 @@ export default function MeineSeite() {
   const [planung, setPlanung] = useState<PlanungAntwort | null>(null)
   const [abwesenheiten, setAbwesenheiten] = useState<Abwesenheitsart[]>([])
   const [uebersicht, setUebersicht] = useState<Uebersicht | null>(null)
-  const [weitere, setWeitere] = useState<AuftragKurz[]>([])
   const [aktiv, setAktiv] = useState<DragDaten | null>(null)
   const [meldung, setMeldung] = useState('')
   const [konflikt, setKonflikt] = useState<Konfliktfrage | null>(null)
   const [bearbeiten, setBearbeiten] = useState<Planungseintrag | null>(null)
   const [manuell, setManuell] = useState<{ datum: string; quelle_id: number } | null>(null)
-  const [sucheOffen, setSucheOffen] = useState(false)
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
@@ -171,49 +169,7 @@ export default function MeineSeite() {
           <p className="gedaempft">{langesHeute()}</p>
           <h1 className="seitentitel">Hallo {user.vorname || user.benutzername}</h1>
         </div>
-        <div className="werkzeugleiste">
-          <button type="button" className="icon-knopf umrandet" aria-label="Eine Woche zurück" onClick={() => setVon(addDays(von, -7))}>
-            <Icon name="links" />
-          </button>
-          <button type="button" className="knopf" onClick={() => setVon(montag(heute()))}>Heute</button>
-          <button type="button" className="icon-knopf umrandet" aria-label="Eine Woche weiter" onClick={() => setVon(addDays(von, 7))}>
-            <Icon name="rechts" />
-          </button>
-          <label className="inline-feld">
-            <span>Zeitraum</span>
-            <select value={wochen} onChange={(e) => einstellungenSpeichern({ planung_wochen: Number(e.target.value) })}>
-              {WOCHEN.map((w) => (
-                <option key={w} value={w}>{w} {w === 1 ? 'Woche' : 'Wochen'}</option>
-              ))}
-            </select>
-          </label>
-        </div>
       </div>
-
-      <DndContext sensors={sensors} collisionDetection={kollision} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setAktiv(null)}>
-        <div className="planung-bereich">
-          <section className="karte kalender-karte">
-            {planung ? (
-              <Planungskalender daten={planung} wochen={wochen} darfBearbeiten={darfBearbeiten} onEintragKlick={setBearbeiten} />
-            ) : (
-              <p className="gedaempft">Planung wird geladen …</p>
-            )}
-            <p className="hinweis">
-              Zum Verschieben einen Eintrag auf den neuen ersten Tag ziehen. Die Dauer änderst du an den Rändern, Details per Klick.
-            </p>
-          </section>
-          <Bausteine
-            abwesenheiten={abwesenheiten}
-            auftraege={uebersicht?.auftraege ?? []}
-            weitere={weitere.filter((w) => !uebersicht?.auftraege.some((a) => a.id === w.id))}
-            onWeitereEntfernen={(id) => setWeitere((l) => l.filter((a) => a.id !== id))}
-            onAlleAuftraege={() => setSucheOffen(true)}
-          />
-        </div>
-        <DragOverlay dropAnimation={null}>
-          {aktiv && <ZiehVorschau daten={aktiv} />}
-        </DragOverlay>
-      </DndContext>
 
       <div className="karten-raster drei">
         <AufgabenKarte aufgaben={uebersicht?.aufgaben ?? []} auftraege={uebersicht?.auftraege ?? []} onErledigt={aufgabeUmschalten} onNeu={uebersichtLaden} onFehler={setMeldung} />
@@ -285,6 +241,49 @@ export default function MeineSeite() {
         </section>
       </div>
 
+      <div className="abschnitt-kopf">
+        <h2 className="abschnitt-titel">Meine Planung</h2>
+        <div className="werkzeugleiste">
+          <button type="button" className="icon-knopf umrandet" aria-label="Eine Woche zurück" onClick={() => setVon(addDays(von, -7))}>
+            <Icon name="links" />
+          </button>
+          <button type="button" className="knopf" onClick={() => setVon(montag(heute()))}>Heute</button>
+          <button type="button" className="icon-knopf umrandet" aria-label="Eine Woche weiter" onClick={() => setVon(addDays(von, 7))}>
+            <Icon name="rechts" />
+          </button>
+          <label className="inline-feld">
+            <span>Zeitraum</span>
+            <select value={wochen} onChange={(e) => einstellungenSpeichern({ planung_wochen: Number(e.target.value) })}>
+              {WOCHEN.map((w) => (
+                <option key={w} value={w}>{w} {w === 1 ? 'Woche' : 'Wochen'}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <DndContext sensors={sensors} collisionDetection={kollision} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setAktiv(null)}>
+        <div className="planung-bereich">
+          <section className="karte kalender-karte">
+            {planung ? (
+              <Planungskalender daten={planung} wochen={wochen} darfBearbeiten={darfBearbeiten} onEintragKlick={setBearbeiten} />
+            ) : (
+              <p className="gedaempft">Planung wird geladen …</p>
+            )}
+            <p className="hinweis">
+              Zum Verschieben einen Eintrag auf den neuen ersten Tag ziehen. Die Dauer änderst du an den Rändern, Details per Klick.
+            </p>
+          </section>
+          <Bausteine
+            abwesenheiten={abwesenheiten}
+            auftraege={uebersicht?.auftraege ?? []}
+          />
+        </div>
+        <DragOverlay dropAnimation={null}>
+          {aktiv && <ZiehVorschau daten={aktiv} />}
+        </DragOverlay>
+      </DndContext>
+
       {meldung && (
         <div className="toast" role="alert">
           {meldung}
@@ -341,13 +340,6 @@ export default function MeineSeite() {
         />
       )}
 
-      {sucheOffen && (
-        <AuftragSuche
-          onClose={() => setSucheOffen(false)}
-          bereits={new Set([...(uebersicht?.auftraege ?? []), ...weitere].map((a) => a.id))}
-          onWaehlen={(a) => setWeitere((l) => (l.some((x) => x.id === a.id) ? l : [...l, a]))}
-        />
-      )}
     </div>
   )
 }
@@ -425,54 +417,5 @@ function AufgabenKarte({ aufgaben, auftraege, onErledigt, onNeu, onFehler }: {
         ))}
       </ul>
     </section>
-  )
-}
-
-function AuftragSuche({ onClose, onWaehlen, bereits }: {
-  onClose: () => void
-  onWaehlen: (a: AuftragKurz) => void
-  bereits: Set<number>
-}) {
-  const [q, setQ] = useState('')
-  const [treffer, setTreffer] = useState<AuftragKurz[] | null>(null)
-
-  useEffect(() => {
-    const t = window.setTimeout(() => {
-      api
-        .get<{ auftraege: AuftragKurz[] }>(`/api/auftraege/suche?q=${encodeURIComponent(q)}`)
-        .then((r) => setTreffer(r.auftraege))
-        .catch(() => setTreffer([]))
-    }, 200)
-    return () => window.clearTimeout(t)
-  }, [q])
-
-  return (
-    <Dialog titel="Alle Aufträge" onClose={onClose} breit aktionen={<button type="button" className="knopf" onClick={onClose}>Fertig</button>}>
-      <label className="suchfeld">
-        <Icon name="suche" size={16} />
-        <input type="search" aria-label="Aufträge durchsuchen" placeholder="Auftrag, Kunde, System oder Techniker" value={q} onChange={(e) => setQ(e.target.value)} />
-      </label>
-      <p className="gedaempft klein">Gewählte Aufträge erscheinen in deiner Leiste und können dann in den Kalender gezogen werden.</p>
-      <ul className="liste such-liste">
-        {treffer === null && <li className="gedaempft">Suche …</li>}
-        {treffer?.length === 0 && <li className="gedaempft">Keine offenen Aufträge gefunden.</li>}
-        {treffer?.map((a) => (
-          <li key={a.id} className="liste-eintrag zeile-zwischen">
-            <span className="zeile">
-              <span className="farbpunkt" style={{ background: a.farbe }} />
-              <span>
-                <strong>{a.name}</strong>
-                <small className="gedaempft block">{[a.typ, a.kunde, a.system, a.techniker].filter(Boolean).join(' · ')}</small>
-              </span>
-            </span>
-            {bereits.has(a.id) ? (
-              <span className="gedaempft klein">in der Leiste</span>
-            ) : (
-              <button type="button" className="knopf klein" onClick={() => onWaehlen(a)}>Hinzufügen</button>
-            )}
-          </li>
-        ))}
-      </ul>
-    </Dialog>
   )
 }

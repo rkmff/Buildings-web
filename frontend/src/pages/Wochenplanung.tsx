@@ -14,7 +14,7 @@ import {
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import { api, ApiError } from '../api'
-import { AuftragChip, ZiehChip } from '../components/Bausteine'
+import { AbwesenheitChips, AuftragChip } from '../components/Bausteine'
 import Dialog from '../components/Dialog'
 import Icon from '../components/Icon'
 import { Griff, type DragDaten } from '../components/Planungskalender'
@@ -473,29 +473,7 @@ function AuftragsPanel({ abwesenheiten, onSchliessen }: { abwesenheiten: Abwesen
           <Icon name="rechts" size={16} />
         </button>
       </div>
-      <div className="chip-liste">
-        {abwesenheiten.map((a) => {
-          const farbe = a.farbe || '#64748b'
-          return (
-            <ZiehChip
-              key={a.id}
-              id={`b-abw-${a.id}`}
-              className="abwesenheit-chip"
-              style={{ background: farbe, color: textAuf(farbe) }}
-              daten={{
-                art: 'baustein',
-                quelle_typ: 'abwesenheit',
-                quelle_id: a.id,
-                label: a.bezeichnung,
-                farbe,
-                manuell: a.bezeichnung.trim().toLowerCase() === 'manuell',
-              }}
-            >
-              {a.bezeichnung}
-            </ZiehChip>
-          )
-        })}
-      </div>
+      <AbwesenheitChips abwesenheiten={abwesenheiten} />
       <div className="bausteine-abschnitt team-auftraege">
         <h3 className="mini-titel">Aufträge</h3>
         <label className="suchfeld">
