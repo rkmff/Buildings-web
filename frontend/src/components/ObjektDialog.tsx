@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
+import { lang } from '../datum'
 import Dialog from './Dialog'
 
 export type ObjektTyp = 'kunde' | 'system' | 'isp' | 'anlage' | 'geraet' | 'ansprechpartner'
@@ -22,6 +23,7 @@ interface Formular {
   werte?: Record<string, unknown>
   eltern_id?: number | null
   verwendung?: { label: string; anzahl: number }[]
+  protokoll?: { erstellt_am: string | null; erstellt_von: string | null; geaendert_am: string | null; geaendert_von: string | null }
 }
 
 type Wert = string | number | boolean | null
@@ -37,6 +39,21 @@ interface Props {
   onClose: () => void
   onGespeichert: (id: number) => void
   onGeloescht?: () => void
+}
+
+export function Protokoll({ erstelltAm, erstelltVon, geaendertAm, geaendertVon }: {
+  erstelltAm?: string | null; erstelltVon?: string | null; geaendertAm?: string | null; geaendertVon?: string | null
+}) {
+  const teil = (label: string, am?: string | null, von?: string | null) =>
+    am || von ? `${label} ${am ? zeitpunkt(am) : ''}${von ? ` von ${von}` : ''}` : null
+  const text = [teil('Erstellt', erstelltAm, erstelltVon), teil('Geändert', geaendertAm, geaendertVon)].filter(Boolean).join(' · ')
+  return text ? <p className="protokoll gedaempft klein">{text}</p> : null
+}
+
+/** "2026-10-02 18:40:12" → "02.10.2026, 18:40" */
+function zeitpunkt(wert: string) {
+  const [d, t] = wert.split(/[ T]/)
+  return `${lang(d)}${t ? `, ${t.slice(0, 5)}` : ''}`
 }
 
 function leerWert(f: Feld): Wert {
@@ -178,6 +195,10 @@ export default function ObjektDialog({ typ, id, elternId, zuordnung, onClose, on
       <div className="formular-raster">{form.felder.map(eingabe)}</div>
       {id && benutzt.length > 0 && (
         <p className="gedaempft klein">Löschen geht erst, wenn nichts mehr daran hängt. Verwendet von: {verwendungText}.</p>
+      )}
+      {form.protokoll && (
+        <Protokoll erstelltAm={form.protokoll.erstellt_am} erstelltVon={form.protokoll.erstellt_von}
+          geaendertAm={form.protokoll.geaendert_am} geaendertVon={form.protokoll.geaendert_von} />
       )}
       {fehler && <p className="fehler" role="alert">{fehler}</p>}
     </Dialog>

@@ -1,8 +1,9 @@
 """Kunden & Anlagen: Objektbaum und Detailansichten (Kunde, System, ISP, Anlage, Gerät)."""
 from flask import Blueprint, abort, current_app, send_file
 
-from ..auth import has_full_access, login_required
+from ..auth import login_required
 from ..db import get_db, row, rows
+from .objekte_bearbeiten import rechte
 
 bp = Blueprint("objekte", __name__)
 
@@ -60,7 +61,7 @@ def baum():
     ohne_kunde = [s for liste in by_kunde.values() for s in liste]
     if ohne_kunde:
         kunden.append({"id": None, "name": "Ohne Kunde", "systeme": ohne_kunde})
-    return {"ok": True, "kunden": kunden, "darf_bearbeiten": has_full_access()}
+    return {"ok": True, "kunden": kunden, "rechte": rechte()}
 
 
 @bp.get("/kunden/<int:kunde_id>")

@@ -1,6 +1,7 @@
 """Kunden & Anlagen bearbeiten: Kunden, Systeme, ISPs, Anlagen, Geräte und Ansprechpartner.
 
-Ändern dürfen Admins und Dispatcher. Gelöscht wird nur, was nirgends mehr verwendet wird;
+Kunden, Systeme und Ansprechpartner ändern Admins und Dispatcher; ISPs, Anlagen und Geräte
+pflegen auch die Techniker. Gelöscht wird nur, was nirgends mehr verwendet wird;
 die Prüfung liest dazu alle Fremdschlüssel der Datenbank, damit keine Fotos oder
 Wartungsaufgaben unbemerkt mitgelöscht werden.
 """
@@ -42,7 +43,7 @@ OBJEKTE = {
         ],
     },
     "isp": {
-        "name": "ISP", "tabelle": "tblISPs", "pk": "ISID", "eltern": ("ISKS", "system", "System"),
+        "name": "ISP", "alle": True, "tabelle": "tblISPs", "pk": "ISID", "eltern": ("ISKS", "system", "System"),
         "felder": [
             ("ISName", "Name", "text", True), ("ISBeschreibung", "Beschreibung", "text", False),
             ("ISTyp", "Typ", "auswahl", False, "isp_typen"), ("ISBMS", "BMS", "auswahl", False, "bms"),
@@ -50,14 +51,14 @@ OBJEKTE = {
         ],
     },
     "anlage": {
-        "name": "Anlage", "tabelle": "tblAnlagen", "pk": "ANID", "eltern": ("ANIS", "isp", "ISP"),
+        "name": "Anlage", "alle": True, "tabelle": "tblAnlagen", "pk": "ANID", "eltern": ("ANIS", "isp", "ISP"),
         "felder": [
             ("ANName", "Name", "text", True), ("ANBeschreibung", "Beschreibung", "text", False),
             ("ANAnlagentyp", "Anlagentyp", "auswahl", False, "anlagentypen"),
         ],
     },
     "geraet": {
-        "name": "Gerät", "tabelle": "tblGeRäte", "pk": "GRID", "eltern": ("GRAN", "anlage", "Anlage"),
+        "name": "Gerät", "alle": True, "tabelle": "tblGeRäte", "pk": "GRID", "eltern": ("GRAN", "anlage", "Anlage"),
         "felder": [
             ("GRName", "Name", "text", True), ("GRBMKZ", "BMKZ", "text", False),
             ("GRArt", "Geräteart", "auswahl", False, "geraetearten"), ("GRHersteller", "Hersteller", "text", False),
@@ -108,9 +109,18 @@ def _cfg(typ: str) -> dict:
     return cfg
 
 
-def _nur_berechtigt():
-    if not has_full_access():
-        abort(403, description="Kunden und Anlagen können nur Admins und Dispatcher ändern.")
+def darf(typ: str) -> bool:
+    """ISPs, Anlagen und Geräte darf jeder Techniker pflegen, den Rest nur Admins und Dispatcher."""
+    return bool(OBJEKTE[typ].get("alle")) or has_full_access()
+
+
+def rechte() -> dict[str, bool]:
+    return {typ: darf(typ) for typ in OBJEKTE}
+
+
+def _nur_berechtigt(typ: str):
+    if not darf(typ):
+        abort(403, description=f"{OBJEKTE[typ]['name']} können nur Admins und Dispatcher ändern.")
 
 
 def _laden(db, cfg, pk: int) -> dict:
@@ -208,7 +218,7 @@ def formular(typ: str):
                 ))
         felder.append(feld)
     out = {"ok": True, "typ": typ, "name": cfg["name"], "felder": felder, "auswahl": auswahl,
-           "darf_bearbeiten": has_full_access(), "eltern": None}
+           "darf_bearbeiten": darf(typ), "eltern": None}
     if cfg["eltern"]:
         spalte, eltern_typ, label = cfg["eltern"]
         out["eltern"] = {"spalte": spalte, "typ": eltern_typ, "label": label,
@@ -222,6 +232,7 @@ def formular(typ: str):
         if cfg["eltern"]:
             out["eltern_id"] = obj.get(cfg["eltern"][0])
         out["verwendung"] = verwendung(db, cfg["tabelle"], pk)
+        out["protokoll"] = {k: obj.get(f"web_{k}") for k in ("erstellt_am", "erstellt_von", "geaendert_am", "geaendert_von")}
     return out
 
 
@@ -229,7 +240,7 @@ def formular(typ: str):
 @login_required
 def anlegen(typ: str):
     cfg = _cfg(typ)
-    _nur_berechtigt()
+    _nur_berechtigt(typ)
     db = get_db()
     data = request.get_json(silent=True) or {}
     werte = _werte(db, cfg, data.get("werte") or {}, neu=True)
@@ -256,7 +267,7 @@ def anlegen(typ: str):
 @login_required
 def aendern(typ: str, pk: int):
     cfg = _cfg(typ)
-    _nur_berechtigt()
+    _nur_berechtigt(typ)
     db = get_db()
     _laden(db, cfg, pk)
     data = request.get_json(silent=True) or {}
@@ -275,7 +286,7 @@ def aendern(typ: str, pk: int):
 @login_required
 def loeschen(typ: str, pk: int):
     cfg = _cfg(typ)
-    _nur_berechtigt()
+    _nur_berechtigt(typ)
     db = get_db()
     _laden(db, cfg, pk)
     benutzt = verwendung(db, cfg["tabelle"], pk)

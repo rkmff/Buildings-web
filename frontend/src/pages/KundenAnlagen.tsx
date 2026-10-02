@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import Icon from '../components/Icon'
-import ObjektDialog, { type ObjektTyp } from '../components/ObjektDialog'
+import ObjektDialog, { Protokoll, type ObjektTyp } from '../components/ObjektDialog'
 import { lang } from '../datum'
 import type { Foto } from '../types'
 
@@ -80,14 +80,14 @@ export default function KundenAnlagen() {
   const [kunden, setKunden] = useState<BaumKunde[] | null>(null)
   const [offen, setOffen] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState('')
-  const [darf, setDarf] = useState(false)
+  const [rechte, setRechte] = useState<Rechte>({})
   const [neuerKunde, setNeuerKunde] = useState(false)
   const navigate = useNavigate()
 
   const ladenBaum = useCallback(() => {
-    api.get<{ kunden: BaumKunde[]; darf_bearbeiten: boolean }>('/api/baum').then((r) => {
+    api.get<{ kunden: BaumKunde[]; rechte: Rechte }>('/api/baum').then((r) => {
       setKunden(r.kunden)
-      setDarf(r.darf_bearbeiten)
+      setRechte(r.rechte)
     })
   }, [])
   useEffect(ladenBaum, [ladenBaum])
@@ -139,7 +139,7 @@ export default function KundenAnlagen() {
         <div className="baum-kopf">
           <div className="baum-kopf-zeile">
             <h1 className="titel-klein">Kunden &amp; Anlagen</h1>
-            {darf && (
+            {rechte.kunde && (
               <button type="button" className="knopf klein" onClick={() => setNeuerKunde(true)}>
                 <Icon name="plus" size={15} /> Kunde
               </button>
@@ -178,7 +178,7 @@ export default function KundenAnlagen() {
       </aside>
       <section className="objekt-detail">
         {typ && id !== undefined ? (
-          <Detail key={`${typ}-${id}`} typ={typ} id={id} darf={darf} onGeaendert={ladenBaum} />
+          <Detail key={`${typ}-${id}`} typ={typ} id={id} rechte={rechte} onGeaendert={ladenBaum} />
         ) : (
           <div className="karte leer">Wähle links einen Kunden, ein System, eine ISP oder eine Anlage.</div>
         )}
@@ -209,7 +209,7 @@ function elternPfad(typ: Typ, d: any): string {
   return '/objekte'
 }
 
-function Detail({ typ, id, darf, onGeaendert }: { typ: Typ; id: number; darf: boolean; onGeaendert: () => void }) {
+function Detail({ typ, id, rechte, onGeaendert }: { typ: Typ; id: number; rechte: Rechte; onGeaendert: () => void }) {
   const [daten, setDaten] = useState<any>(null)
   const [fehler, setFehler] = useState('')
   const [tab, setTab] = useState(0)
@@ -237,7 +237,8 @@ function Detail({ typ, id, darf, onGeaendert }: { typ: Typ; id: number; darf: bo
     else laden()
   }
 
-  const sicht = ansicht(typ, daten, { darf, oeffne: setDialog })
+  const sicht = ansicht(typ, daten, { rechte, oeffne: setDialog })
+  const obj = daten[typ]
   const tabs = sicht.tabs.filter(Boolean) as Tab[]
   const aktiverTab = tabs[Math.min(tab, tabs.length - 1)]
 
@@ -262,7 +263,7 @@ function Detail({ typ, id, darf, onGeaendert }: { typ: Typ; id: number; darf: bo
           <h1 className="seitentitel">{sicht.titel}</h1>
           {sicht.untertitel && <p className="gedaempft">{sicht.untertitel}</p>}
         </div>
-        {darf && (
+        {rechte[typ] && (
           <button type="button" className="knopf" onClick={() => setDialog({ typ, id })}>Bearbeiten</button>
         )}
         {daten.fotos?.[0] && (
@@ -290,6 +291,7 @@ function Detail({ typ, id, darf, onGeaendert }: { typ: Typ; id: number; darf: bo
         {aktiverTab?.aktion && <div className="tab-aktionen">{aktiverTab.aktion}</div>}
         {aktiverTab?.inhalt}
       </div>
+      <Protokoll erstelltAm={obj?.web_erstellt_am} erstelltVon={obj?.web_erstellt_von} geaendertAm={obj?.web_geaendert_am} geaendertVon={obj?.web_geaendert_von} />
       {dialog && (
         <ObjektDialog
           {...dialog}
@@ -304,10 +306,12 @@ function Detail({ typ, id, darf, onGeaendert }: { typ: Typ; id: number; darf: bo
 
 interface Tab { label: string; anzahl: number; inhalt: ReactNode; aktion?: ReactNode }
 
-interface Kontext { darf: boolean; oeffne: (z: DialogZustand) => void }
+type Rechte = Partial<Record<ObjektTyp, boolean>>
+
+interface Kontext { rechte: Rechte; oeffne: (z: DialogZustand) => void }
 
 function NeuKnopf({ ctx, label, zustand }: { ctx: Kontext; label: string; zustand: DialogZustand }) {
-  if (!ctx.darf) return null
+  if (!ctx.rechte[zustand.typ]) return null
   return (
     <button type="button" className="knopf klein" onClick={() => ctx.oeffne(zustand)}>
       <Icon name="plus" size={15} /> {label}
@@ -364,7 +368,7 @@ function ansprechpartnerTab(liste: any[], ctx: Kontext, zuordnung: { kunde_id?: 
       <Tabelle
         spalten={['Name', 'Funktion', 'Telefon', 'Mobil', 'E-Mail']}
         leer="Keine Ansprechpartner hinterlegt."
-        onZeile={ctx.darf ? (i) => ctx.oeffne({ typ: 'ansprechpartner', id: liste[i].id }) : undefined}
+        onZeile={ctx.rechte.ansprechpartner ? (i) => ctx.oeffne({ typ: 'ansprechpartner', id: liste[i].id }) : undefined}
         zeilen={liste.map((a) => [
           `${a.vorname ?? ''} ${a.nachname ?? ''}`.trim(),
           a.funktion,

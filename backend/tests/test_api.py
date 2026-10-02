@@ -337,7 +337,7 @@ def test_stammdaten(client):
 
 def test_objekte_bearbeiten(client):
     login(client, "RKO")
-    assert client.get("/api/baum").json["darf_bearbeiten"] is True
+    assert all(client.get("/api/baum").json["rechte"].values())
     r = client.post("/api/objekte/kunde", json={"werte": {"KUName": "Testkunde GmbH", "KUOrt": "Köln"}})
     assert r.status_code == 201, r.json
     kid = r.json["id"]
@@ -388,6 +388,19 @@ def test_objekte_bearbeiten(client):
         assert client.delete(f"/api/objekte/{typ}/{pk}").status_code == 200, typ
 
     client.post("/api/auth/logout")
-    login(client, "FRF")
-    assert client.get("/api/baum").json["darf_bearbeiten"] is False
+    ich = login(client, "FRF")
+    rechte = client.get("/api/baum").json["rechte"]
+    assert rechte == {"kunde": False, "system": False, "isp": True, "anlage": True, "geraet": True, "ansprechpartner": False}
     assert client.post("/api/objekte/kunde", json={"werte": {"KUName": "X"}}).status_code == 403
+    system = client.get("/api/baum").json["kunden"][0]["systeme"][0]["id"]
+    assert client.put(f"/api/objekte/system/{system}", json={"werte": {"KSOrt": "X"}}).status_code == 403
+    # Techniker pflegen ISPs, Anlagen und Geräte selbst; Erstellt/Geändert wird mitgeschrieben
+    isp = client.post("/api/objekte/isp", json={"eltern_id": system, "werte": {"ISName": "ISP Technik"}}).json["id"]
+    anlage = client.post("/api/objekte/anlage", json={"eltern_id": isp, "werte": {"ANName": "RLT 9"}}).json["id"]
+    gid = client.post("/api/objekte/geraet", json={"eltern_id": anlage, "werte": {"GRName": "Fühler"}}).json["id"]
+    assert client.put(f"/api/objekte/geraet/{gid}", json={"werte": {"GRHersteller": "Siemens"}}).status_code == 200
+    prot = client.get(f"/api/objekt-formular/geraet?id={gid}").json["protokoll"]
+    name = f"{ich['vorname']} {ich['nachname']}".strip()
+    assert prot["erstellt_von"] == name and prot["geaendert_von"] == name and prot["erstellt_am"]
+    for typ, pk in (("geraet", gid), ("anlage", anlage), ("isp", isp)):
+        assert client.delete(f"/api/objekte/{typ}/{pk}").status_code == 200, typ
