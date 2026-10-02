@@ -545,7 +545,7 @@ function AusfuehrenDialog({ auftragId, modus, onClose, onErzeugt }: {
     anlagen && v?.anlagen.objekte ? anzahl(v.anlagen.objekte, 'Anlage', 'Anlagen') : '',
     geraete && v?.geraete.objekte ? anzahl(v.geraete.objekte, 'Gerät', 'Geräte') : '',
   ].filter(Boolean).join(' und ')
-  const luecken = v ? v.luecken.anlagen_ohne_typ + v.luecken.geraete_nicht_pflichtig : 0
+  const luecken = v ? v.luecken.anlagen_ohne_typ : 0
 
   const los = async () => {
     setLaeuft(true)
@@ -593,9 +593,8 @@ function AusfuehrenDialog({ auftragId, modus, onClose, onErzeugt }: {
           )}
           {luecken > 0 && (
             <p className="klein gedaempft">
-              In diesem System {[v.luecken.anlagen_ohne_typ ? `haben ${v.luecken.anlagen_ohne_typ} Anlagen keinen Anlagentyp` : '',
-                v.luecken.geraete_nicht_pflichtig ? `sind ${v.luecken.geraete_nicht_pflichtig} Geräte nicht wartungspflichtig` : ''].filter(Boolean).join(' und ')}.
-              {' '}Für sie entstehen keine Aufgaben. <Link to="/wartungsvorlagen?tab=luecken">Lücken schließen</Link>
+              In diesem System {v.luecken.anlagen_ohne_typ === 1 ? 'hat 1 Anlage' : `haben ${v.luecken.anlagen_ohne_typ} Anlagen`} keinen Anlagentyp.
+              {' '}Für sie entstehen keine Anlagenaufgaben. <Link to="/wartungsvorlagen?tab=luecken">Anlagentyp setzen</Link>
             </p>
           )}
           {fehler && <p className="fehler" role="alert">{fehler}</p>}

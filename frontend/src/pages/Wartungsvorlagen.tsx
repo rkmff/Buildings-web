@@ -55,13 +55,13 @@ export default function Wartungsvorlagen() {
   useEffect(laden, [laden])
 
   if (!daten) return <div className="seite"><p className="gedaempft">{meldung || 'Wird geladen …'}</p></div>
-  const lueckenGesamt = daten.luecken.anlagen_ohne_typ + daten.luecken.geraete_nicht_pflichtig
+  const lueckenGesamt = daten.luecken.anlagen_ohne_typ
 
   const tabs: [Tab, string, number | null][] = [
     ['vorlagen', 'Vorlagen', daten.vorlagen.length],
     ['anlagen', 'Matrix Anlagentypen', daten.matrix.anlagen.length],
     ['geraete', 'Matrix Gerätearten', daten.matrix.geraete.length],
-    ['luecken', 'Lücken', lueckenGesamt],
+    ['luecken', 'Typen & Wartungspflicht', lueckenGesamt],
   ]
 
   return (
@@ -421,7 +421,7 @@ function Luecken({ daten, onGeaendert, onMeldung }: { daten: Daten; onGeaendert:
 
       <section className="karte tab-inhalt">
         <div className="tab-aktionen zwischen">
-          <h2 className="abschnitt-titel">Geräte nicht wartungspflichtig <span className="zaehler">{geraete.length}</span></h2>
+          <h2 className="abschnitt-titel">Nicht wartungspflichtige Geräte mit Vorlage <span className="zaehler">{geraete.length}</span></h2>
           {geraete.length > 0 && (
             <button type="button" className="knopf klein" onClick={() => setPflicht((s) => {
               const alle = geraete.every((g) => s.has(g.id))
@@ -431,7 +431,7 @@ function Luecken({ daten, onGeaendert, onMeldung }: { daten: Daten; onGeaendert:
             })}>{geraete.every((g) => pflicht.has(g.id)) ? 'Auswahl aufheben' : 'Alle auswählen'}</button>
           )}
         </div>
-        <p className="gedaempft klein luecken-hinweis">Für diese Geräte gibt es Vorlagen, sie sind aber nicht als wartungspflichtig markiert.</p>
+        <p className="gedaempft klein luecken-hinweis">Für ihre Geräteart gibt es Vorlagen, sie sind aber nicht wartungspflichtig. Das ist oft gewollt. Wer doch gewartet werden soll, lässt sich hier markieren.</p>
         {geraete.length === 0 ? <p className="gedaempft">Keine.</p> : (
           <div className="tabelle-rahmen">
             <table className="tabelle">
