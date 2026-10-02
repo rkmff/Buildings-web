@@ -115,6 +115,75 @@ def planung_lesen():
     }
 
 
+@bp.get("/team-planung")
+@login_required
+def team_planung():
+    """Wochenplanung aller Techniker: Admin/Disposition sehen alle, Mitarbeiter ihre Niederlassung."""
+    db = get_db()
+    try:
+        wochen = max(1, min(12, int(request.args.get("wochen") or 2)))
+    except ValueError:
+        abort(400, description="Ungültige Parameter.")
+    von = iso(request.args.get("von")) or date.today()
+    von = von - timedelta(days=von.weekday())
+    bis = von + timedelta(days=wochen * 7 - 1)
+
+    voll = has_full_access()
+    nl = request.args.get("niederlassung_id")
+    sql = """SELECT TCID AS id, TCVorname AS vorname, TCNachname AS nachname, TCFunktion AS funktion,
+                    TCNiederlassung AS niederlassung_id
+             FROM "tblMitarbeiter"
+             WHERE COALESCE(TCAktiv,1)<>0 AND COALESCE(TCInWochenplanung,1)<>0"""
+    params: list = []
+    if not voll:
+        sql += " AND TCNiederlassung IS ?"
+        params.append(g.user["TCNiederlassung"])
+    elif nl:
+        sql += " AND TCNiederlassung=?"
+        params.append(int(nl) if nl.isdigit() else -1)
+    sql += """ ORDER BY COALESCE(TCNiederlassung,999999), COALESCE(TCWochenplanungSortierung,999999),
+                        TCNachname COLLATE NOCASE, TCVorname COLLATE NOCASE"""
+    mitarbeiter = rows(db.execute(sql, params))
+    ids = [m["id"] for m in mitarbeiter] or [0]
+    platz = ",".join("?" * len(ids))
+    eintraege = db.execute(
+        EINTRAG_SQL + f" WHERE p.mitarbeiter_id IN ({platz}) AND p.start_datum<=? AND p.ende_datum>=? ORDER BY p.start_datum",
+        (*ids, bis.isoformat(), von.isoformat()),
+    ).fetchall()
+    niederlassungen = rows(
+        db.execute(
+            "SELECT NLID AS id, NLKurzzeichen AS kurz, NLName AS name FROM tblNiederlassungen"
+            + ("" if voll else " WHERE NLID IS ?")
+            + " ORDER BY NLName COLLATE NOCASE",
+            () if voll else (g.user["TCNiederlassung"],),
+        )
+    )
+    for m in mitarbeiter:
+        m["darf_bearbeiten"] = _darf_bearbeiten(m["id"])
+    return {
+        "ok": True,
+        "von": von.isoformat(),
+        "bis": bis.isoformat(),
+        "voll": voll,
+        "mitarbeiter": mitarbeiter,
+        "niederlassungen": niederlassungen,
+        "eintraege": [_eintrag_json(r) for r in eintraege],
+        "feiertage": rows(
+            db.execute(
+                "SELECT datum, bezeichnung FROM feiertage WHERE COALESCE(aktiv,1)<>0 AND datum BETWEEN ? AND ? ORDER BY datum",
+                (von.isoformat(), bis.isoformat()),
+            )
+        ),
+        "bereitschaften": rows(
+            db.execute(
+                f"""SELECT bereitschaft_id AS id, mitarbeiter_id, start_datum, ende_datum FROM bereitschaften
+                    WHERE mitarbeiter_id IN ({platz}) AND start_datum<=? AND ende_datum>=? ORDER BY start_datum""",
+                (*ids, bis.isoformat(), von.isoformat()),
+            )
+        ),
+    }
+
+
 @bp.get("/planung/bausteine")
 @login_required
 def bausteine():
@@ -280,14 +349,23 @@ def planung_verschieben(planung_id: int):
     start = iso(data.get("start_datum"))
     if start is None:
         raise PlanungFehler("Das Datum ist ungültig.")
+    try:
+        ziel = int(data.get("mitarbeiter_id") or r["mitarbeiter_id"])
+    except (TypeError, ValueError):
+        raise PlanungFehler("Ungültiger Mitarbeiter.") from None
+    if ziel != r["mitarbeiter_id"]:
+        if not _darf_bearbeiten(ziel):
+            raise PlanungFehler("Du darfst nur deine eigene Planung bearbeiten.", 403)
+        if not db.execute('SELECT 1 FROM "tblMitarbeiter" WHERE TCID=?', (ziel,)).fetchone():
+            raise PlanungFehler("Der Mitarbeiter wurde nicht gefunden.", 404)
     if tag_gesperrt(db, start):
         raise PlanungFehler("Einträge können nur auf Arbeitstage gezogen werden.")
     tage = max(1, arbeitstage_zwischen(db, date.fromisoformat(r["start_datum"]), date.fromisoformat(r["ende_datum"])))
     ende = arbeitstag_verschieben(db, start, tage - 1)
-    zeitraum_pruefen(db, r["mitarbeiter_id"], start, ende, bool(data.get("replace")), exclude_id=planung_id)
+    zeitraum_pruefen(db, ziel, start, ende, bool(data.get("replace")), exclude_id=planung_id)
     db.execute(
-        "UPDATE mitarbeiter_planung SET start_datum=?, ende_datum=? WHERE planung_id=?",
-        (start.isoformat(), ende.isoformat(), planung_id),
+        "UPDATE mitarbeiter_planung SET mitarbeiter_id=?, start_datum=?, ende_datum=? WHERE planung_id=?",
+        (ziel, start.isoformat(), ende.isoformat(), planung_id),
     )
     db.commit()
     return {"ok": True, "eintrag": _eintrag_json(_eintrag(db, planung_id))}

@@ -241,3 +241,27 @@ def test_wartung_fotos(client, app):
     assert client.patch(f"/api/fotos/{fid}", json={"im_wartungsbericht": True}).status_code == 200
     assert client.delete(f"/api/fotos/{fid}").status_code == 200
     assert client.get(f"/api/fotos/{fid}/datei").status_code == 404
+
+
+def test_team_planung_und_umplanen(client):
+    login(client, "RKO")
+    team = client.get("/api/team-planung?von=2027-06-07&wochen=2").json
+    assert team["voll"] and len(team["mitarbeiter"]) > 1 and team["bis"] == "2027-06-20"
+    andere = next(m for m in team["mitarbeiter"] if m["id"] != 3)
+    buero = _baustein(client, "Büro")
+    r = client.post("/api/planung", json={"mitarbeiter_id": 3, "quelle_typ": "abwesenheit", "quelle_id": buero["id"], "datum": "2027-06-08", "arbeitstage": 2})
+    pid = r.json["eintrag"]["id"]
+    r = client.post(f"/api/planung/{pid}/verschieben", json={"start_datum": "2027-06-10", "mitarbeiter_id": andere["id"]})
+    assert r.status_code == 200, r.json
+    assert (r.json["eintrag"]["mitarbeiter_id"], r.json["eintrag"]["ende_datum"]) == (andere["id"], "2027-06-11")
+    team = client.get("/api/team-planung?von=2027-06-07&wochen=2").json
+    assert any(e["id"] == pid and e["mitarbeiter_id"] == andere["id"] for e in team["eintraege"])
+    client.post("/api/auth/logout")
+
+    login(client, "FRF")
+    team = client.get("/api/team-planung?von=2027-06-07").json
+    assert not team["voll"]
+    assert {m["darf_bearbeiten"] for m in team["mitarbeiter"] if m["id"] != 2} <= {False}
+    r = client.post("/api/planung", json={"quelle_typ": "abwesenheit", "quelle_id": buero["id"], "datum": "2027-06-14"})
+    eigen = r.json["eintrag"]["id"]
+    assert client.post(f"/api/planung/{eigen}/verschieben", json={"start_datum": "2027-06-15", "mitarbeiter_id": 3}).status_code == 403
