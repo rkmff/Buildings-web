@@ -1,4 +1,4 @@
-"""Ablauf einer Wartung: Status (geplant, gestartet, pausiert, fertig), Zeitprotokoll und
+"""Ablauf einer Wartung: Status (geplant, gestartet, pausiert, fertig) und
 Erzeugen der Wartungsaufgaben aus den beiden Matrizen.
 
 Die Erzeugung folgt dem bisherigen Programm: Für jede Anlage des Kundensystems mit passendem
@@ -6,9 +6,8 @@ Anlagentyp und jedes wartungspflichtige Gerät mit passender Geräteart entsteht
 Vorlage eine Aufgabe. Vorhandene Aufgaben (gleicher Auftrag, gleiches Objekt, gleiche Vorlage)
 werden nicht doppelt angelegt; deshalb kann „Aufgaben aktualisieren“ beliebig oft laufen.
 """
-from datetime import datetime
 
-from flask import Blueprint, abort, g, request
+from flask import Blueprint, abort, request
 
 from ..auth import has_full_access, login_required
 from ..db import get_db, row, rows
@@ -71,10 +70,6 @@ VERALTET_SQL = """
 """
 
 
-def _jetzt() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-
 def _auftrag(db, atid: int) -> dict:
     a = row(db.execute(LISTE_SQL + " WHERE a.ATID=?", (atid,)))
     if a is None:
@@ -114,19 +109,9 @@ def veraltete(db, atid: int) -> list[int]:
 
 
 def zeiten(db, atid: int) -> dict:
-    eintraege = rows(db.execute(
-        """SELECT z.zeit_id AS id, z.start, z.ende, TRIM(COALESCE(m.TCVorname,'') || ' ' || COALESCE(m.TCNachname,'')) AS techniker
-           FROM wartung_zeiten z LEFT JOIN "tblMitarbeiter" m ON m.TCID=z.mitarbeiter_id
-           WHERE z.auftrag_id=? ORDER BY z.start""",
-        (atid,),
-    ))
-    sekunden = 0.0
-    for e in eintraege:
-        ende = datetime.fromisoformat(e["ende"]) if e["ende"] else datetime.now()
-        sekunden += max(0.0, (ende - datetime.fromisoformat(e["start"])).total_seconds())
+    """Summe der Zeitvorgaben. Eine Ist-Zeit wird bewusst nicht erfasst."""
     soll = db.execute("SELECT COALESCE(SUM(zeitvorgabe),0) FROM wartungsaufgaben WHERE auftrag_id=?", (atid,)).fetchone()[0]
-    return {"eintraege": eintraege, "ist_minuten": round(sekunden / 60), "soll_minuten": round(soll or 0),
-            "laeuft_seit": next((e["start"] for e in eintraege if not e["ende"]), None)}
+    return {"soll_minuten": round(soll or 0)}
 
 
 def _auftragsstatus_setzen(db, atid: int, wartungsstatus: str):
@@ -136,10 +121,6 @@ def _auftragsstatus_setzen(db, atid: int, wartungsstatus: str):
     r = db.execute('SELECT SAID FROM "tblStatusAufträge" WHERE LOWER(TRIM(SAName))=?', (name,)).fetchone()
     if r:
         db.execute('UPDATE "tblAufTräge" SET ATStatus=? WHERE ATID=?', (r[0], atid))
-
-
-def _zeit_beenden(db, atid: int):
-    db.execute("UPDATE wartung_zeiten SET ende=? WHERE auftrag_id=? AND ende IS NULL", (_jetzt(), atid))
 
 
 def _status_wechseln(db, a: dict, neu: str):
@@ -155,10 +136,6 @@ def _status_wechseln(db, a: dict, neu: str):
         ).fetchone()[0]
         if offen:
             abort(409, description=f"Es sind noch {offen} Aufgaben ohne Ergebnis. Erst wenn alle bewertet sind, ist die Wartung fertig.")
-    _zeit_beenden(db, a["id"])
-    if neu == "gestartet":
-        db.execute("INSERT INTO wartung_zeiten (auftrag_id, mitarbeiter_id, start) VALUES (?,?,?)",
-                   (a["id"], g.user["TCID"], _jetzt()))
     db.execute('UPDATE "tblAufTräge" SET wartung_status=? WHERE ATID=?', (neu, a["id"]))
     _auftragsstatus_setzen(db, a["id"], neu)
 

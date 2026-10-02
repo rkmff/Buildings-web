@@ -65,10 +65,7 @@ interface FruehererKommentar {
 }
 
 interface Zeiten {
-  eintraege: { id: number; start: string; ende: string | null; techniker: string }[]
-  ist_minuten: number
   soll_minuten: number
-  laeuft_seit: string | null
 }
 
 type WartungStatus = 'geplant' | 'gestartet' | 'pausiert' | 'fertig'
@@ -225,6 +222,7 @@ export default function WartungAusfuehren() {
   const [anlage, setAnlage] = useState('')
   const [suche, setSuche] = useState('')
   const [nurOffene, setNurOffene] = useLokal('buildings.wartung.nurOffene', false)
+  const [fruehereZeigen, setFruehereZeigen] = useLokal('buildings.wartung.fruehereKommentare', true)
   const [dialog, setDialog] = useState<'ausfuehren' | 'aktualisieren' | null>(null)
   const [bearbeite, setBearbeite] = useState<{ typ: 'anlage' | 'geraet'; id: number } | null>(null)
   const [neuIds, setNeuIds] = useState<Set<number>>(new Set())
@@ -404,6 +402,11 @@ export default function WartungAusfuehren() {
         <label className="schalter">
           <input type="checkbox" checked={nurOffene} onChange={(e) => setNurOffene(e.target.checked)} /> nur offene
         </label>
+        {daten.fruehere_kommentare.length > 0 && (
+          <label className="schalter">
+            <input type="checkbox" checked={fruehereZeigen} onChange={(e) => setFruehereZeigen(e.target.checked)} /> frühere Kommentare
+          </label>
+        )}
         <label className="suchfeld">
           <Icon name="suche" size={16} />
           <input type="search" aria-label="Aufgaben suchen" placeholder="Gerät, BMKZ, Aufgabe" value={suche} onChange={(e) => setSuche(e.target.value)} />
@@ -435,6 +438,7 @@ export default function WartungAusfuehren() {
                     daten={daten}
                     veraltet={veraltet.has(t.id)}
                     neu={neuIds.has(t.id)}
+                    fruehereZeigen={fruehereZeigen}
                     onAktion={aktion}
                     onNeuLaden={laden}
                     onFehler={setMeldung}
@@ -479,27 +483,14 @@ function StatusLeiste({ status, zeiten, offen, veraltet, onAusfuehren, onAktuali
   onAktualisieren: () => void
   onStatus: (s: WartungStatus) => void
 }) {
-  // Läuft die Wartung, zählt die Ist-Zeit ohne Neuladen weiter.
-  const [geladen] = useState(() => Date.now())
-  const [jetzt, setJetzt] = useState(() => Date.now())
-  useEffect(() => {
-    if (!zeiten.laeuft_seit) return
-    const t = setInterval(() => setJetzt(Date.now()), 30000)
-    return () => clearInterval(t)
-  }, [zeiten.laeuft_seit])
-  const ist = zeiten.ist_minuten + (zeiten.laeuft_seit ? Math.max(0, Math.floor((jetzt - geladen) / 60000)) : 0)
-  const ueber = zeiten.soll_minuten > 0 && ist > zeiten.soll_minuten
   const fertigTitel = offen ? `Noch ${anzahl(offen, "Aufgabe", "Aufgaben")} ohne Ergebnis` : undefined
 
   return (
     <div className={`karte wartung-status status-${status}`}>
       <div className="wartung-status-info">
         <WartungPille status={status} />
-        <span className="klein">
-          Ist <strong className={ueber ? 'warnung' : undefined}>{minuten(ist) === '–' ? '0 min' : minuten(ist)}</strong>
-          {' '}von Soll <strong>{minuten(zeiten.soll_minuten)}</strong>
-        </span>
-        {zeiten.laeuft_seit && <small className="gedaempft">läuft seit {zeiten.laeuft_seit.slice(11, 16)} Uhr</small>}
+        {zeiten.soll_minuten > 0 && <span className="klein">Zeitvorgabe <strong>{minuten(zeiten.soll_minuten)}</strong></span>}
+        {status === 'pausiert' && <small className="gedaempft">Zum Weitermachen auf „Fortsetzen“ klicken.</small>}
         {veraltet > 0 && <small className="warnung">{veraltet === 1 ? "1 Aufgabe passt" : `${veraltet} Aufgaben passen`} nicht mehr zur Matrix</small>}
       </div>
       <div className="knopf-reihe">
@@ -594,7 +585,7 @@ function AusfuehrenDialog({ auftragId, modus, onClose, onErzeugt }: {
           {luecken > 0 && (
             <p className="klein gedaempft">
               In diesem System {v.luecken.anlagen_ohne_typ === 1 ? 'hat 1 Anlage' : `haben ${v.luecken.anlagen_ohne_typ} Anlagen`} keinen Anlagentyp.
-              {' '}Für sie entstehen keine Anlagenaufgaben. <Link to="/wartungsvorlagen?tab=luecken">Anlagentyp setzen</Link>
+              {' '}Für sie entstehen keine Anlagenaufgaben. <Link to="/stammdaten/wartungsvorlagen?tab=luecken">Anlagentyp setzen</Link>
             </p>
           )}
           {fehler && <p className="fehler" role="alert">{fehler}</p>}
@@ -604,11 +595,12 @@ function AusfuehrenDialog({ auftragId, modus, onClose, onErzeugt }: {
   )
 }
 
-function AufgabeKarte({ t, daten, veraltet, neu, onAktion, onNeuLaden, onFehler, onEntfernen, onBearbeiten }: {
+function AufgabeKarte({ t, daten, veraltet, neu, fruehereZeigen, onAktion, onNeuLaden, onFehler, onEntfernen, onBearbeiten }: {
   t: Wartungsaufgabe
   daten: Daten
   veraltet: boolean
   neu: boolean
+  fruehereZeigen: boolean
   onAktion: (fn: () => Promise<{ aufgabe: Wartungsaufgabe }>) => Promise<boolean>
   onNeuLaden: () => void
   onFehler: (text: string) => void
@@ -641,15 +633,16 @@ function AufgabeKarte({ t, daten, veraltet, neu, onAktion, onNeuLaden, onFehler,
     <li className={`karte wartung-aufgabe${fertig ? ` erledigt ergebnis-rand-${t.ergebnis}` : ''}`}>
       <div className="zeile-zwischen oben">
         <div className="wartung-aufgabe-text">
-          <strong>
+          <strong className="wartung-objekt">
+            {t.geraet_id
+              ? [t.bmkz, t.geraet, t.einbauort].filter(Boolean).join(' · ')
+              : `Anlage ${t.anlage}`}
+          </strong>
+          <span className="wartung-aufgabe-name">
             {t.name}
             {neu && <span className="status-pille pille-aktiv">neu</span>}
             {veraltet && <span className="status-pille pille-achtung" title="Vorlage nicht mehr in der Matrix oder Gerät nicht mehr wartungspflichtig">passt nicht mehr</span>}
-          </strong>
-          <small className="gedaempft">
-            {t.geraet_id ? [t.bmkz, t.geraet].filter(Boolean).join(' · ') : 'Anlage'}
-            {t.einbauort ? ` · ${t.einbauort}` : ''}
-          </small>
+          </span>
         </div>
         <div className="zeile">
           {veraltet && !fertig && kommentare.length === 0 && fotos.length === 0 && (
@@ -662,6 +655,12 @@ function AufgabeKarte({ t, daten, veraltet, neu, onAktion, onNeuLaden, onFehler,
       </div>
 
       {messung && <Messformular t={t} onAktion={onAktion} />}
+      {messung && !fertig && (
+        <div className="neutral-zeile">
+          <button type="button" className="ergebnis-knopf ergebnis-neutral" disabled={laeuft} onClick={() => ergebnis('neutral')}>neutral</button>
+          <small className="gedaempft">ohne Messwerte abschließen, erscheint nicht im Bericht</small>
+        </div>
+      )}
 
       {(!messung || fertig) && (
         <div className="ergebnis-knoepfe" role="group" aria-label={`Ergebnis für ${t.name}`}>
@@ -702,7 +701,7 @@ function AufgabeKarte({ t, daten, veraltet, neu, onAktion, onNeuLaden, onFehler,
         <Kommentare aufgabeId={t.id} kommentare={kommentare} ich={daten.ich} darfAlles={daten.darf_alles}
           formular={offen === 'kommentare'} onNeuLaden={onNeuLaden} onFehler={onFehler} />
       )}
-      {fruehere.length > 0 && (
+      {fruehereZeigen && fruehere.length > 0 && (
         <div className="fruehere-kommentare">
           <small className="gedaempft">Aus früheren Wartungen {t.geraet_id ? 'dieses Geräts' : 'dieser Anlage'}</small>
           <ul>

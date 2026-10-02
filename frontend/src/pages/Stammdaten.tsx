@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import Icon from '../components/Icon'
 import { lang } from '../datum'
+import Wartungsvorlagen from './Wartungsvorlagen'
 
 interface Liste {
   slug: string
@@ -64,6 +65,12 @@ export default function Stammdaten() {
           </p>
         </div>
         <nav className="baum-liste">
+          <div>
+            <h2 className="mini-titel personen-gruppe">Wartung</h2>
+            <Link to="/stammdaten/wartungsvorlagen" className={`personen-zeile${slug === 'wartungsvorlagen' ? ' aktiv' : ''}`}>
+              <span className="personen-text"><strong>Wartungsvorlagen &amp; Matrizen</strong></span>
+            </Link>
+          </div>
           {gruppen.map((g) => (
             <div key={g.gruppe}>
               <h2 className="mini-titel personen-gruppe">{g.gruppe}</h2>
@@ -78,7 +85,9 @@ export default function Stammdaten() {
         </nav>
       </aside>
       <section className="objekt-detail">
-        {slug ? (
+        {slug === 'wartungsvorlagen' ? (
+          <Wartungsvorlagen eingebettet />
+        ) : slug ? (
           <ListenAnsicht key={slug} slug={slug} onGeaendert={ladenListen} onZurueck={() => navigate('/stammdaten')} />
         ) : (
           <div className="karte leer">Wähle links eine Liste.</div>

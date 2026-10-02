@@ -43,7 +43,7 @@ function minuten(m: number) {
 
 export { minuten }
 
-export default function Wartungsvorlagen() {
+export default function Wartungsvorlagen({ eingebettet = false }: { eingebettet?: boolean }) {
   const [params, setParams] = useSearchParams()
   const tab = (params.get('tab') as Tab) || 'vorlagen'
   const [daten, setDaten] = useState<Daten | null>(null)
@@ -65,10 +65,10 @@ export default function Wartungsvorlagen() {
   ]
 
   return (
-    <div className="seite">
+    <div className={eingebettet ? 'wartungsvorlagen' : 'seite'}>
       <div className="seiten-kopf">
         <div>
-          <h1 className="seitentitel">Wartungsvorlagen</h1>
+          {eingebettet ? <h2 className="detail-titel">Wartungsvorlagen</h2> : <h1 className="seitentitel">Wartungsvorlagen</h1>}
           <p className="gedaempft">Welche Aufgaben bei einer Wartung für welche Anlagentypen und Gerätearten entstehen.</p>
         </div>
       </div>
@@ -105,6 +105,21 @@ function VorlagenListe({ daten, onGeaendert, onMeldung }: { daten: Daten; onGeae
   const typLabel = Object.fromEntries(daten.aufgabentypen.map((t) => [t.id, t.label]))
   const zuordnungen = (v: Vorlage) =>
     daten.matrix.anlagen.filter(([vid]) => vid === v.id).length + daten.matrix.geraete.filter(([vid]) => vid === v.id).length
+  const giltFuer = async (v: Vorlage, feld: 'gilt_fuer_anlagen' | 'gilt_fuer_geraete', an: boolean) => {
+    const art = feld === 'gilt_fuer_anlagen' ? 'anlagen' : 'geraete'
+    const haken = daten.matrix[art].filter(([vid]) => vid === v.id).length
+    if (!an && haken && !window.confirm(`„${v.kurzbezeichnung}“ hat ${haken} Häkchen in der Matrix ${art === 'anlagen' ? 'Anlagentypen' : 'Gerätearten'}. Sie werden entfernt. Weiter?`)) return
+    try {
+      await api.put(`/api/wartungsvorlagen/${v.id}`, {
+        kurzbezeichnung: v.kurzbezeichnung, langtext: v.langtext, zeitvorgabe: v.zeitvorgabe, aufgabentyp: v.aufgabentyp,
+        taetigkeit: v.taetigkeit, vdma_position: v.vdma_position, warn_grenze: v.warn_grenze, rot_grenze: v.rot_grenze,
+        gilt_fuer_anlagen: !!v.gilt_fuer_anlagen, gilt_fuer_geraete: !!v.gilt_fuer_geraete, [feld]: an,
+      })
+      onGeaendert()
+    } catch (e) {
+      onMeldung((e as Error).message)
+    }
+  }
   const q = filter.trim().toLowerCase()
   const sichtbar = daten.vorlagen.filter((v) => !q || [v.kurzbezeichnung, v.langtext, v.vdma_position].some((x) => x?.toLowerCase().includes(q)))
 
@@ -122,7 +137,7 @@ function VorlagenListe({ daten, onGeaendert, onMeldung }: { daten: Daten; onGeae
       <div className="tabelle-rahmen">
         <table className="tabelle">
           <thead>
-            <tr><th>Vorlage</th><th>VDMA</th><th>Tätigkeit</th><th>Aufgabentyp</th><th>Zeit</th><th>Gilt für</th><th>Zuordnungen</th></tr>
+            <tr><th>Vorlage</th><th>VDMA</th><th>Tätigkeit</th><th>Aufgabentyp</th><th>Zeit</th><th className="zelle-mitte">Gilt für Anlagen</th><th className="zelle-mitte">Gilt für Geräte</th><th>Zuordnungen</th></tr>
           </thead>
           <tbody>
             {sichtbar.map((v) => (
@@ -132,13 +147,17 @@ function VorlagenListe({ daten, onGeaendert, onMeldung }: { daten: Daten; onGeae
                 <td>{v.taetigkeit ?? '–'}</td>
                 <td>{typLabel[v.aufgabentyp] ?? v.aufgabentyp}</td>
                 <td className="nowrap">{minuten(v.zeitvorgabe)}</td>
-                <td className="nowrap">
-                  {!!v.gilt_fuer_anlagen && <span className="status-pille">Anlagen</span>} {!!v.gilt_fuer_geraete && <span className="status-pille">Geräte</span>}
-                </td>
+                {(['gilt_fuer_anlagen', 'gilt_fuer_geraete'] as const).map((feld) => (
+                  <td key={feld} className="zelle-mitte" onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" checked={!!v[feld]} disabled={!daten.darf_bearbeiten}
+                      aria-label={`${v.kurzbezeichnung}: ${feld === 'gilt_fuer_anlagen' ? 'gilt für Anlagen' : 'gilt für Geräte'}`}
+                      onChange={(e) => giltFuer(v, feld, e.target.checked)} />
+                  </td>
+                ))}
                 <td>{zuordnungen(v) || <span className="warnung" title="Ohne Zuordnung wird die Vorlage nie erzeugt">keine</span>}</td>
               </tr>
             ))}
-            {sichtbar.length === 0 && <tr><td colSpan={7} className="gedaempft">Keine Vorlagen.</td></tr>}
+            {sichtbar.length === 0 && <tr><td colSpan={8} className="gedaempft">Keine Vorlagen.</td></tr>}
           </tbody>
         </table>
       </div>
