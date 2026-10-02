@@ -404,3 +404,72 @@ def test_objekte_bearbeiten(client):
     assert prot["erstellt_von"] == name and prot["geaendert_von"] == name and prot["erstellt_am"]
     for typ, pk in (("geraet", gid), ("anlage", anlage), ("isp", isp)):
         assert client.delete(f"/api/objekte/{typ}/{pk}").status_code == 200, typ
+
+
+def test_ausruestung(client):
+    import io
+
+    from PIL import Image
+
+    fred = login(client, "FRF")
+    stamm = client.get("/api/ausruestung/stammdaten").json
+    assert stamm["darf_alles"] is False
+    messgeraet = next(t for t in stamm["typen"] if t["kalibrierung"])
+    meine = client.get("/api/ausruestung").json["eintraege"]
+    assert meine and all(e["besitzer_id"] == fred["id"] for e in meine)
+    assert len(client.get("/api/ausruestung?ansicht=alle").json["eintraege"]) > len(meine)
+
+    assert client.post("/api/ausruestung", json={"name": "", "typ_id": messgeraet["id"]}).status_code == 400
+    r = client.post("/api/ausruestung", json={"name": "Multimeter", "typ_id": messgeraet["id"], "hersteller": "Fluke",
+                                               "naechste_pruefung": "2000-01-01", "besitzer_id": 1})
+    assert r.status_code == 201, r.json
+    auid = r.json["id"]
+    d = client.get(f"/api/ausruestung/{auid}").json
+    a = d["ausruestung"]
+    assert a["besitzer_id"] == fred["id"] and a["pruefung"] == "faellig" and a["kalibrierpflichtig"] and d["darf_bearbeiten"]
+    assert a["erstellt_von"]
+
+    # Kalibrierung verschiebt die nächste Prüfung
+    assert client.post(f"/api/ausruestung/{auid}/kalibrierungen", json={"datum": "2026-09-01", "gueltig_bis": "2026-08-01"}).status_code == 400
+    assert client.post(f"/api/ausruestung/{auid}/kalibrierungen", json={"datum": "2026-09-01", "gueltig_bis": "2099-09-01", "ergebnis": "i. O."}).status_code == 200
+    d = client.get(f"/api/ausruestung/{auid}").json
+    assert d["ausruestung"]["naechste_pruefung"] == "2099-09-01" and d["ausruestung"]["pruefung"] is None
+    assert client.delete(f"/api/kalibrierungen/{d['kalibrierungen'][0]['id']}").status_code == 200
+
+    puffer = io.BytesIO()
+    Image.new("RGB", (100, 80), "blue").save(puffer, "JPEG")
+    puffer.seek(0)
+    r = client.post(f"/api/ausruestung/{auid}/fotos", data={"fotos": (puffer, "geraet.jpg")}, content_type="multipart/form-data")
+    assert r.status_code == 200, r.json
+    assert len(client.get(f"/api/ausruestung/{auid}").json["fotos"]) == 1
+
+    # Übergabe an Ralf, Ralf nimmt an
+    client.post("/api/auth/logout")
+    ralf = login(client, "RKO")
+    client.post("/api/auth/logout")
+    login(client, "FRF")
+    assert client.post(f"/api/ausruestung/{auid}/uebergabe", json={"an_id": fred["id"]}).status_code == 400
+    assert client.post(f"/api/ausruestung/{auid}/uebergabe", json={"an_id": ralf["id"], "notiz": "für Montag"}).status_code == 200
+    assert client.post(f"/api/ausruestung/{auid}/uebergabe", json={"an_id": ralf["id"]}).status_code == 400
+    uid = client.get(f"/api/ausruestung/{auid}").json["uebergaben"][0]["id"]
+    assert client.post(f"/api/uebergaben/{uid}/annehmen").status_code == 403
+    client.post("/api/auth/logout")
+    login(client, "RKO")
+    an_mich = client.get("/api/ausruestung").json["an_mich"]
+    assert any(u["id"] == uid for u in an_mich)
+    assert client.post(f"/api/uebergaben/{uid}/annehmen").status_code == 200
+    assert client.post(f"/api/uebergaben/{uid}/annehmen").status_code == 409
+    d = client.get(f"/api/ausruestung/{auid}").json
+    assert d["ausruestung"]["besitzer_id"] == ralf["id"] and d["uebergaben"][0]["status"] == "angenommen"
+
+    # Fred darf nicht mehr ändern, Admin kann den Besitzer direkt setzen
+    client.post("/api/auth/logout")
+    login(client, "FRF")
+    assert client.put(f"/api/ausruestung/{auid}", json={"status": "reparatur"}).status_code == 403
+    assert client.delete(f"/api/ausruestung/{auid}").status_code == 403
+    client.post("/api/auth/logout")
+    login(client, "RKO")
+    assert client.put(f"/api/ausruestung/{auid}", json={"besitzer_id": fred["id"], "status": "ausgemustert"}).status_code == 200
+    assert all(e["id"] != auid for e in client.get("/api/ausruestung?ansicht=alle").json["eintraege"])
+    assert any(e["id"] == auid for e in client.get("/api/ausruestung?ansicht=alle&ausgemusterte=1").json["eintraege"])
+    assert client.delete(f"/api/ausruestung/{auid}").status_code == 409  # hat ein Foto

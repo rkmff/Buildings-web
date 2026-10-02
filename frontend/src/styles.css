@@ -629,3 +629,16 @@ a.status-pille.verwendung:hover { background: var(--accent-soft); color: var(--a
   .formular-raster { grid-template-columns: 1fr; }
 }
 .protokoll { margin-top: 10px; }
+
+/* Ausrüstung */
+.segment.volle-breite { display: flex; width: 100%; }
+.segment.volle-breite button { flex: 1; }
+.status-pille.pille-schlecht { background: color-mix(in srgb, var(--schlecht) 15%, transparent); color: var(--schlecht); }
+.status-pille.pille-achtung { background: color-mix(in srgb, var(--achtung) 18%, transparent); color: var(--achtung); }
+.status-pille.uebergabe-offen { background: var(--accent-soft); color: var(--accent-text); }
+.status-pille.uebergabe-abgelehnt { color: var(--schlecht); }
+.uebergabe-box { border: 1px solid var(--accent); background: var(--accent-soft); border-radius: var(--radius-s); padding: 8px 10px; margin-bottom: 12px; }
+.uebergabe-box .mini-titel { color: var(--accent-text); margin-bottom: 6px; }
+.uebergabe-zeile { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; flex-wrap: wrap; }
+.uebergabe-zeile + .uebergabe-zeile { border-top: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+.dokument-liste { padding: 8px 18px; }
