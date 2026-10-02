@@ -118,3 +118,39 @@ def test_objektbaum_und_details(client):
     assert data["geraete"]
     assert client.get(f"/api/geraete/{data['geraete'][0]['id']}").status_code == 200
     assert client.get("/api/anlagen/999999").status_code == 404
+
+
+def test_auftraege_liste_detail_status(client):
+    login(client, "RKO")
+    liste = client.get("/api/auftraege").json["auftraege"]
+    assert liste and all(a["status"] != "storniert" for a in liste)
+    assert any(a["status"] == "storniert" for a in client.get("/api/auftraege?storniert=1").json["auftraege"])
+    wartung = next(a for a in liste if a["wartung_gesamt"])
+    d = client.get(f"/api/auftraege/{wartung['id']}").json
+    assert d["auftrag"]["wartung_erledigt"] <= d["auftrag"]["wartung_gesamt"]
+    stamm = client.get("/api/auftraege/stammdaten").json
+    erledigt = next(s["id"] for s in stamm["status"] if s["name"] == "erledigt")
+    r = client.patch(f"/api/auftraege/{wartung['id']}/status", json={"status_id": erledigt})
+    assert r.json["auftrag"]["status"] == "erledigt"
+
+
+def test_auftrag_anlegen_bearbeiten(client):
+    login(client, "RKO")
+    stamm = client.get("/api/auftraege/stammdaten").json
+    neu = {"name": "Testauftrag", "system_id": stamm["systeme"][0]["id"], "typ_id": stamm["typen"][0]["id"], "status_id": 1}
+    a = client.post("/api/auftraege", json=neu).json["auftrag"]
+    assert a["name"] == "Testauftrag" and a["status"] == "angeboten"
+    a = client.put(f"/api/auftraege/{a['id']}", json={**neu, "name": "Umbenannt", "plan_tage": 3}).json["auftrag"]
+    assert (a["name"], a["plan_tage"]) == ("Umbenannt", 3)
+    assert client.post("/api/auftraege", json={"name": ""}).status_code == 400
+    r = client.post(f"/api/auftraege/{a['id']}/aufgaben", json={"titel": "Klappen prüfen"})
+    aid = r.json["id"]
+    assert client.patch(f"/api/aufgaben/{aid}", json={"status": "in arbeit"}).status_code == 200
+    assert client.get(f"/api/auftraege/{a['id']}").json["aufgaben"][0]["status"] == "in arbeit"
+
+
+def test_mitarbeiter_darf_auftrag_nicht_aendern(client):
+    login(client, "FRF")
+    a = client.get("/api/auftraege").json["auftraege"][0]
+    assert client.patch(f"/api/auftraege/{a['id']}/status", json={"status_id": 4}).status_code == 403
+    assert client.get("/api/auftraege/stammdaten").json["darf_bearbeiten"] is False

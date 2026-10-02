@@ -163,7 +163,9 @@ def aufgabe_anlegen():
         return {"ok": False, "message": "Bitte einen Titel eingeben."}, 400
     auftrag_id = data.get("auftrag_id") or None
     db = get_db()
-    if auftrag_id is not None and not db.execute('SELECT 1 FROM "tblAufTräge" WHERE ATID=?', (auftrag_id,)).fetchone():
+    if auftrag_id is None:
+        return {"ok": False, "message": "Bitte einen Auftrag wählen."}, 400
+    if not db.execute('SELECT 1 FROM "tblAufTräge" WHERE ATID=?', (auftrag_id,)).fetchone():
         return {"ok": False, "message": "Der Auftrag wurde nicht gefunden."}, 404
     cur = db.execute(
         "INSERT INTO auftragsaufgaben (auftrag_id, titel, beschreibung, mitarbeiter_id, status) VALUES (?, ?, ?, ?, 'offen')",
