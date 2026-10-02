@@ -1,9 +1,15 @@
 """Startet Buildings im Netzwerk (waitress). Port über BUILDINGS_PORT, Standard 2912."""
 import os
+import sys
+from pathlib import Path
 
-from waitress import serve
+# Die portable Windows-Laufzeit (embedded Python) nimmt den Skriptordner nicht
+# automatisch in den Suchpfad auf.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from buildings_api import create_app
+from waitress import serve  # noqa: E402
+
+from buildings_api import create_app  # noqa: E402
 
 if __name__ == "__main__":
     host = os.environ.get("BUILDINGS_HOST", "0.0.0.0")
