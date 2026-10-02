@@ -1,0 +1,27 @@
+Buildings - neue Oberflaeche (Testversion)
+==========================================
+
+Testen neben der laufenden alten App, ohne die echten Daten anzufassen.
+
+EINMALIG EINRICHTEN
+1. Das Testpaket herunterladen:
+   https://github.com/rkmff/Buildings-web/releases/download/testpaket/Buildings-neu-Test.zip
+2. Den Ordner "Buildings-neu" auf den Server entpacken, z. B. nach C:\Buildings-neu
+3. Aus der bisherigen Installation in diesen Ordner kopieren:
+   - den Ordner  runtime   (die Python-Laufzeit)
+   - den Ordner  data      (als KOPIE, damit Tests die echten Daten nicht aendern)
+4. TEST_STARTEN.bat doppelklicken.
+5. Im Browser oeffnen:  http://localhost:2913  bzw. im Netz
+   http://<Servername>:2913   (ggf. Port 2913 in der Windows-Firewall freigeben)
+
+NEUE VERSION EINSPIELEN
+   UPDATE.bat doppelklicken. Es laedt die neueste Testversion, beendet den
+   laufenden Test, ersetzt nur die Ordner backend und frontend und startet
+   den Test neu. Die Ordner data, config und runtime bleiben unveraendert.
+   Welche Version laeuft, steht in VERSION.txt.
+
+Die alte App laeuft auf Port 2912 einfach weiter. Zum Beenden das schwarze
+Fenster schliessen.
+
+Falls beim Start "No module named ..." erscheint (z. B. PIL, flask, waitress):
+   runtime\python\python.exe -m pip install -r backend\requirements.txt
