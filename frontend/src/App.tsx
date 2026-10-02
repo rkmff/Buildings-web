@@ -8,6 +8,7 @@ import Login from './pages/Login'
 import MeineSeite from './pages/MeineSeite'
 import PasswortAendern from './pages/PasswortAendern'
 import Platzhalter from './pages/Platzhalter'
+import WartungAusfuehren, { WartungListe } from './pages/Wartung'
 
 export default function App() {
   const { user, laden } = useAuth()
@@ -26,7 +27,8 @@ export default function App() {
         <Route path="passwort" element={<PasswortAendern />} />
         <Route path="auftraege" element={<Auftraege />} />
         <Route path="auftraege/:id" element={<Auftraege />} />
-        <Route path="wartung" element={<Platzhalter titel="Wartung" />} />
+        <Route path="wartung" element={<WartungListe />} />
+        <Route path="wartung/:id" element={<WartungAusfuehren key="wartung" />} />
         <Route path="wochenplanung" element={<Platzhalter titel="Wochenplanung" />} />
         <Route path="mitarbeiter" element={<Platzhalter titel="Mitarbeiter" />} />
         <Route path="ausruestung" element={<Platzhalter titel="Ausrüstung" />} />

@@ -154,3 +154,90 @@ def test_mitarbeiter_darf_auftrag_nicht_aendern(client):
     a = client.get("/api/auftraege").json["auftraege"][0]
     assert client.patch(f"/api/auftraege/{a['id']}/status", json={"status_id": 4}).status_code == 403
     assert client.get("/api/auftraege/stammdaten").json["darf_bearbeiten"] is False
+
+
+def _wartungsauftrag(client, typ=None):
+    for a in client.get("/api/wartung?alle=1").json["auftraege"]:
+        d = client.get(f"/api/wartung/{a['id']}").json
+        aufgaben = [t for t in d["aufgaben"] if typ is None or t["typ"] == typ]
+        if aufgaben:
+            return d, aufgaben[0]
+    raise AssertionError(f"kein Wartungsauftrag mit {typ}")
+
+
+def test_wartung_ergebnis_und_oeffnen(client):
+    login(client, "FRF")
+    d, t = _wartungsauftrag(client, "standard")
+    assert d["auftrag"]["id"] and t["isp"] and t["anlage"]
+    r = client.post(f"/api/wartungsaufgaben/{t['id']}/ergebnis", json={"ergebnis": "achtung"})
+    assert r.status_code == 200
+    a = r.json["aufgabe"]
+    assert (a["status"], a["ergebnis"]) == ("erledigt", "achtung") and a["techniker"]
+    assert client.post(f"/api/wartungsaufgaben/{t['id']}/ergebnis", json={"ergebnis": "super"}).status_code == 400
+    a = client.post(f"/api/wartungsaufgaben/{t['id']}/oeffnen").json["aufgabe"]
+    assert (a["status"], a["ergebnis"], a["techniker"]) == ("offen", "neutral", "")
+
+
+def test_wartung_messungen(client):
+    login(client, "RKO")
+    _, t = _wartungsauftrag(client, "fuehlerkalibrierung")
+    r = client.post(f"/api/wartungsaufgaben/{t['id']}/messung", json={"gemessen": "21,5", "angezeigt": "21", "offset_alt": "0.2"})
+    assert r.status_code == 200, r.json
+    assert r.json["aufgabe"]["kalibrierung_offset_neu"] == 0.7 and r.json["aufgabe"]["ergebnis"] == "gut"
+    assert client.post(f"/api/wartungsaufgaben/{t['id']}/messung", json={"gemessen": "x"}).status_code == 400
+
+    _, s = _wartungsauftrag(client, "strommessung")
+    r = client.post(f"/api/wartungsaufgaben/{s['id']}/messung", json={"spannung": 230, "l1": "3.2"})
+    assert r.status_code == 200 and r.json["aufgabe"]["strom_l2"] is None
+    assert client.post(f"/api/wartungsaufgaben/{s['id']}/messung", json={"spannung": 400, "l1": 1}).status_code == 400
+
+    _, std = _wartungsauftrag(client, "standard")
+    assert client.post(f"/api/wartungsaufgaben/{std['id']}/messung", json={}).status_code == 400
+
+
+def test_wartung_kommentare(client):
+    login(client, "FRF")
+    d, t = _wartungsauftrag(client)
+    kid = client.post(f"/api/wartungsaufgaben/{t['id']}/kommentare", json={"kommentar": "Filter verschmutzt", "intern": True}).json["id"]
+    assert client.put(f"/api/wartungskommentare/{kid}", json={"kommentar": "Filter getauscht"}).status_code == 200
+    client.post("/api/auth/logout")
+    login(client, "RKO")
+    d = client.get(f"/api/wartung/{d['auftrag']['id']}").json
+    k = next(k for k in d["kommentare"] if k["id"] == kid)
+    assert (k["kommentar"], k["intern"]) == ("Filter getauscht", 0)
+    fremd = client.post(f"/api/wartungsaufgaben/{t['id']}/kommentare", json={"kommentar": "Admin"}).json["id"]
+    client.post("/api/auth/logout")
+    login(client, "FRF")
+    assert client.delete(f"/api/wartungskommentare/{fremd}").status_code == 403
+    assert client.delete(f"/api/wartungskommentare/{kid}").status_code == 200
+
+
+def test_wartung_fotos(client, app):
+    import io
+
+    from PIL import Image
+
+    login(client, "FRF")
+    _, t = _wartungsauftrag(client)
+    puffer = io.BytesIO()
+    Image.new("RGB", (3000, 1500), "red").save(puffer, "JPEG")
+    puffer.seek(0)
+    r = client.post(
+        f"/api/wartungsaufgaben/{t['id']}/fotos",
+        data={"fotos": (puffer, "Schaden Klappe.jpg")},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 200, r.json
+    fid = r.json["ids"][0]
+    datei = client.get(f"/api/fotos/{fid}/datei")
+    assert datei.status_code == 200
+    assert max(Image.open(io.BytesIO(datei.data)).size) == 2048
+    kaputt = client.post(
+        f"/api/wartungsaufgaben/{t['id']}/fotos",
+        data={"fotos": (io.BytesIO(b"kein bild"), "x.jpg")},
+        content_type="multipart/form-data",
+    )
+    assert kaputt.status_code == 400
+    assert client.patch(f"/api/fotos/{fid}", json={"im_wartungsbericht": True}).status_code == 200
+    assert client.delete(f"/api/fotos/{fid}").status_code == 200
+    assert client.get(f"/api/fotos/{fid}/datei").status_code == 404

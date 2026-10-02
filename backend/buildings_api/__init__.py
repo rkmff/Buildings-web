@@ -33,9 +33,9 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.before_request(load_user)
     app.teardown_appcontext(close_db)
 
-    from .routes import auftraege, auth, me, objekte, planung
+    from .routes import auftraege, auth, me, objekte, planung, wartung
 
-    for module in (auth, me, planung, objekte, auftraege):
+    for module in (auth, me, planung, objekte, auftraege, wartung):
         app.register_blueprint(module.bp, url_prefix="/api")
 
     @app.get("/api/version")

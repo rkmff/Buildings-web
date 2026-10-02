@@ -390,7 +390,7 @@ const AUFGABE_STATUS = [
   { wert: 'erledigt', label: 'erledigt' },
 ]
 
-function Befunde({ a }: { a: Auftrag }) {
+export function Befunde({ a }: { a: Auftrag }) {
   const gesamt = a.wartung_gesamt
   const neutral = a.wartung_erledigt - a.wartung_gut - a.wartung_achtung - a.wartung_schlecht
   const offen = gesamt - a.wartung_erledigt

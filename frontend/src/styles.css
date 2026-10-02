@@ -408,6 +408,79 @@ ul { margin: 0; padding: 0; list-style: none; }
 .kontakt-links { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; margin-top: 2px; }
 .farbe-klein { width: 44px; height: 36px; border: 1px solid var(--line-2); border-radius: var(--radius-s); background: var(--surface); padding: 2px; }
 
+/* ---------- Wartung ---------- */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.knopf.aktiv { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
+.wartung-liste { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.wartung-kachel { display: flex; flex-direction: column; gap: 8px; text-decoration: none; color: var(--text); }
+.wartung-kachel:hover { border-color: var(--line-2); color: var(--text); }
+.wartung-seite { max-width: 1100px; gap: 16px; }
+.wartung-kopf { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.wartung-titel { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wartung-titel a { text-decoration: none; }
+.wartung-befunde .befunde { background: var(--surface); }
+.wartung-zaehler strong { font-size: 18px; }
+.wartung-filter select { flex: 0 1 220px; }
+.wartung-gruppe { display: flex; flex-direction: column; gap: 12px; }
+.wartung-isp { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+.wartung-anlage { display: flex; flex-direction: column; gap: 8px; }
+.wartung-anlage-titel { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 6px 0; }
+.wartung-anlage-titel a { color: var(--text); text-decoration: none; }
+.wartung-anlage-titel a:hover { text-decoration: underline; }
+.wartung-aufgaben { display: flex; flex-direction: column; gap: 8px; }
+.wartung-aufgabe { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; border-left: 4px solid var(--line-2); }
+.wartung-aufgabe.erledigt { background: var(--surface-2); }
+.ergebnis-rand-gut { border-left-color: var(--gut); }
+.ergebnis-rand-achtung { border-left-color: var(--achtung); }
+.ergebnis-rand-schlecht { border-left-color: var(--schlecht); }
+.ergebnis-rand-neutral { border-left-color: var(--neutral); }
+.wartung-aufgabe-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wartung-aufgabe-text strong { font-size: 15px; }
+.ergebnis-knoepfe { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.ergebnis-knopf {
+  --farbe: var(--neutral);
+  min-height: 46px; border-radius: var(--radius-s); border: 1.5px solid var(--farbe); background: var(--surface);
+  color: var(--farbe); font-weight: 600; cursor: pointer; touch-action: manipulation;
+}
+.ergebnis-knopf:hover { background: color-mix(in srgb, var(--farbe) 10%, var(--surface)); }
+.ergebnis-knopf.gewaehlt { background: var(--farbe); color: #fff; cursor: default; }
+:root[data-theme='dunkel'] .ergebnis-knopf.gewaehlt { color: #111613; }
+.ergebnis-knopf:disabled:not(.gewaehlt) { opacity: 0.6; }
+.ergebnis-knopf.ergebnis-gut { --farbe: var(--gut); }
+.ergebnis-knopf.ergebnis-achtung { --farbe: var(--achtung); }
+.ergebnis-knopf.ergebnis-schlecht { --farbe: var(--schlecht); }
+.ergebnis-knopf.ergebnis-neutral { --farbe: var(--neutral); }
+.wartung-aufgabe-fuss { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.wartung-aufgabe-fuss .zaehler { margin-left: 2px; }
+.wartung-info { font-size: 13.5px; color: var(--text-2); border-top: 1px solid var(--surface-3); padding-top: 10px; }
+.wartung-bereich { border-top: 1px solid var(--surface-3); padding-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+.status-pille.intern { margin-left: 6px; background: color-mix(in srgb, var(--achtung) 16%, var(--surface)); color: var(--achtung); }
+.kommentar-formular { display: flex; flex-direction: column; gap: 8px; }
+.kommentar-formular textarea { width: 100%; min-height: 64px; padding: 8px 12px; border: 1px solid var(--line-2); border-radius: var(--radius-s); background: var(--surface); resize: vertical; }
+.kommentar-formular .aufgabe { font-size: 13px; color: var(--text-2); align-items: center; }
+.wartung-fotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.wartung-foto { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.wartung-foto img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius-s); border: 1px solid var(--line); background: var(--surface-3); display: block; }
+.wartung-foto .aufgabe { align-items: center; color: var(--text-2); }
+.foto-neu {
+  aspect-ratio: 4 / 3; border: 1.5px dashed var(--line-2); border-radius: var(--radius-s); background: var(--surface);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--text-2);
+  cursor: pointer; font-size: 12px; padding: 8px; text-align: center;
+}
+.foto-neu:hover { border-color: var(--accent); color: var(--accent-text); }
+.messformular { display: flex; flex-direction: column; gap: 10px; }
+.messfelder { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.messfelder.viele { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.messfelder.vier { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.messfeld { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); font-weight: 500; }
+.messfeld-eingabe { display: flex; align-items: center; border: 1px solid var(--line-2); border-radius: var(--radius-s); background: var(--surface); padding-right: 10px; }
+.messfeld-eingabe:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.messfeld-eingabe input { flex: 1; min-width: 0; min-height: 44px; border: 0; outline: none; background: transparent; padding: 0 10px; font-family: var(--mono); font-size: 15px; color: var(--text); }
+.messwerte-anzeige { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.messwerte-anzeige dl { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; }
+.messwerte-anzeige dt { font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+.messwerte-anzeige dd { margin: 0; }
+
 /* ---------- Tablet und Handy ---------- */
 @media (max-width: 1200px) {
   .karten-raster.drei { grid-template-columns: 1fr 1fr; }
@@ -452,4 +525,13 @@ ul { margin: 0; padding: 0; list-style: none; }
   .detail-spalte { width: auto; left: 0; z-index: 25; border-left: 0; padding: 12px 16px 32px; }
   .filterleiste .suchfeld { max-width: none; flex-basis: 100%; }
   .filterleiste select { flex: 1 1 140px; }
+  .wartung-befunde { display: none; }
+  .wartung-kopf { align-items: flex-start; }
+  .wartung-zaehler { flex-shrink: 0; padding-top: 18px; }
+  .wartung-filter .schalter { flex: 0 0 auto; }
+  .wartung-aufgabe { padding: 12px; }
+  .ergebnis-knopf { min-height: 48px; font-size: 13px; padding: 0 4px; }
+  .messfelder.viele { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .messfelder.vier { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wartung-anlage-titel { top: 56px; }
 }
