@@ -265,3 +265,71 @@ def test_team_planung_und_umplanen(client):
     r = client.post("/api/planung", json={"quelle_typ": "abwesenheit", "quelle_id": buero["id"], "datum": "2027-06-14"})
     eigen = r.json["eintrag"]["id"]
     assert client.post(f"/api/planung/{eigen}/verschieben", json={"start_datum": "2027-06-15", "mitarbeiter_id": 3}).status_code == 403
+
+
+def test_mitarbeiter_liste_detail_und_bearbeiten(client):
+    login(client, "RKO")
+    liste = client.get("/api/mitarbeiter").json["mitarbeiter"]
+    assert any(m["id"] == 2 for m in liste)
+    d = client.get("/api/mitarbeiter/2").json
+    assert {"mitarbeiter", "schulungen", "systeme", "ausruestung"} <= d.keys()
+    m = d["mitarbeiter"]
+    neu = {**m, "funktion": "Obermonteur", "in_wochenplanung": False}
+    r = client.put("/api/mitarbeiter/2", json=neu)
+    assert r.status_code == 200, r.json
+    assert (r.json["mitarbeiter"]["funktion"], r.json["mitarbeiter"]["in_wochenplanung"]) == ("Obermonteur", 0)
+    assert all(t["id"] != 2 for t in client.get("/api/team-planung").json["mitarbeiter"])
+    assert client.put("/api/mitarbeiter/3", json={"nachname": "Köster", "aktiv": False}).status_code == 400
+
+    neu = client.post("/api/mitarbeiter", json={"vorname": "Neu", "nachname": "Techniker", "niederlassung_id": None}).json["mitarbeiter"]
+    assert client.post(f"/api/mitarbeiter/{neu['id']}/schulungen", json={"bezeichnung": "SCC", "datum": "2026-01-15"}).status_code == 200
+    system = client.get("/api/mitarbeiter/stammdaten").json["systeme"][0]["id"]
+    assert client.post(f"/api/mitarbeiter/{neu['id']}/systeme", json={"system_id": system, "hauptverantwortlich": True}).status_code == 200
+    assert client.post(f"/api/mitarbeiter/{neu['id']}/systeme", json={"system_id": system}).status_code == 409
+    d = client.get(f"/api/mitarbeiter/{neu['id']}").json
+    assert d["schulungen"][0]["bezeichnung"] == "SCC" and d["systeme"][0]["hauptverantwortlich"] == 1
+
+    assert client.put(f"/api/mitarbeiter/{neu['id']}/zugang", json={"benutzername": "NTE", "rolle": "mitarbeiter"}).status_code == 400
+    assert client.put(f"/api/mitarbeiter/{neu['id']}/zugang", json={"benutzername": "FRF", "passwort": "geheim1234"}).status_code == 409
+    r = client.put(f"/api/mitarbeiter/{neu['id']}/zugang", json={"benutzername": "NTE", "rolle": "mitarbeiter", "passwort": "geheim1234"})
+    assert r.status_code == 200
+    assert client.put("/api/mitarbeiter/3/zugang", json={"benutzername": "RKO", "rolle": "mitarbeiter"}).status_code == 400
+    client.post("/api/auth/logout")
+    r = client.post("/api/auth/login", json={"benutzername": "NTE", "passwort": "geheim1234"})
+    assert r.status_code == 200 and r.json["user"]["muss_passwort_aendern"]
+
+
+def test_mitarbeiter_reihenfolge_und_rechte(client):
+    login(client, "RKO")
+    ids = [m["id"] for m in client.get("/api/team-planung").json["mitarbeiter"]]
+    umgedreht = list(reversed(ids))
+    assert client.post("/api/mitarbeiter/reihenfolge", json={"ids": umgedreht}).status_code == 200
+    assert [m["id"] for m in client.get("/api/team-planung").json["mitarbeiter"] if m["niederlassung_id"] is None] == [
+        i for i in umgedreht if i in {m["id"] for m in client.get("/api/team-planung").json["mitarbeiter"] if m["niederlassung_id"] is None}
+    ]
+    client.post("/api/auth/logout")
+    login(client, "FRF")
+    assert client.get("/api/mitarbeiter").status_code == 200
+    assert client.put("/api/mitarbeiter/2", json={"nachname": "X"}).status_code == 403
+    assert client.put("/api/mitarbeiter/2/zugang", json={"benutzername": "FRF"}).status_code == 403
+    assert "benutzername" not in client.get("/api/mitarbeiter/3").json["mitarbeiter"]
+
+
+def test_stammdaten(client):
+    login(client, "RKO")
+    listen = {l["slug"]: l for l in client.get("/api/stammdaten").json["listen"]}
+    assert {"niederlassungen", "abwesenheitsarten", "auftragstypen", "geraetearten"} <= listen.keys()
+    nl = client.get("/api/stammdaten/niederlassungen").json
+    benutzt = next(e for e in nl["eintraege"] if e["verwendung"])
+    assert client.delete(f"/api/stammdaten/niederlassungen/{benutzt['id']}").status_code == 409
+    r = client.post("/api/stammdaten/auftragstypen", json={"TAName": "Prüfung", "TAPlanungsfarbe": "#123456"})
+    assert r.status_code == 200
+    tid = r.json["id"]
+    assert client.put(f"/api/stammdaten/auftragstypen/{tid}", json={"TAName": "Prüfung", "TAPlanungsfarbe": "blau"}).status_code == 400
+    assert client.put(f"/api/stammdaten/auftragstypen/{tid}", json={"TAName": "E-Check", "TAPlanungsfarbe": "#654321"}).status_code == 200
+    assert any(e["TAName"] == "E-Check" for e in client.get("/api/stammdaten/auftragstypen").json["eintraege"])
+    assert client.delete(f"/api/stammdaten/auftragstypen/{tid}").status_code == 200
+    assert client.post("/api/stammdaten/feiertage", json={"datum": "2027-12-24", "bezeichnung": "", "farbe": "#facc15"}).status_code == 400
+    client.post("/api/auth/logout")
+    login(client, "FRF")
+    assert client.post("/api/stammdaten/auftragstypen", json={"TAName": "X", "TAPlanungsfarbe": "#123456"}).status_code == 403
