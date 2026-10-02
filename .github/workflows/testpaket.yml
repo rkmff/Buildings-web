@@ -1,0 +1,43 @@
+# Baut das Testpaket und stellt es als Release "testpaket" bereit.
+# Ausgeloest durch Push auf den Branch "testlauf" (zeigt auf den Stand, der getestet werden soll).
+name: Testpaket
+
+on:
+  push:
+    branches: ['testlauf']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bauen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Oberflaeche bauen
+        working-directory: frontend
+        run: npm ci && npx tsc -b && npx vite build
+      - name: Paket zusammenstellen
+        run: |
+          P=paket/Buildings-neu
+          mkdir -p "$P/frontend"
+          cp -r backend "$P/backend"
+          rm -rf "$P/backend/tests"
+          find "$P" -name __pycache__ -prune -exec rm -rf {} +
+          cp -r frontend/dist "$P/frontend/dist"
+          cp testpaket/* "$P/"
+          printf 'Testversion vom %s, Commit %s\r\n' "$(TZ=Europe/Berlin date '+%d.%m.%Y %H:%M')" "${GITHUB_SHA::7}" > "$P/VERSION.txt"
+          (cd paket && zip -qr ../Buildings-neu-Test.zip Buildings-neu)
+      - name: Release aktualisieren
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view testpaket >/dev/null 2>&1 || gh release create testpaket --target "$GITHUB_SHA" --prerelease --title "Testpaket" --notes "Neueste Testversion"
+          gh release upload testpaket Buildings-neu-Test.zip --clobber
+          gh release edit testpaket --notes "$(cat paket/Buildings-neu/VERSION.txt)"

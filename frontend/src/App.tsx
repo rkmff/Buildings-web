@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from './auth'
 import Layout from './components/Layout'
 import Ausruestung from './pages/Ausruestung'
@@ -33,6 +33,7 @@ export default function App() {
         <Route path="auftraege/:id" element={<Auftraege />} />
         <Route path="wartung" element={<WartungListe />} />
         <Route path="wartung/:id" element={<WartungAusfuehren key="wartung" />} />
+        <Route path="wartungsvorlagen" element={<ZuStammdaten />} />
         <Route path="wochenplanung" element={<Wochenplanung />} />
         <Route path="mitarbeiter" element={<Mitarbeiter />} />
         <Route path="mitarbeiter/:id" element={<Mitarbeiter />} />
@@ -45,4 +46,10 @@ export default function App() {
       </Route>
     </Routes>
   )
+}
+
+/** Alte Adresse /wartungsvorlagen: die Vorlagen liegen jetzt in den Stammdaten. */
+function ZuStammdaten() {
+  const { search } = useLocation()
+  return <Navigate to={`/stammdaten/wartungsvorlagen${search}`} replace />
 }

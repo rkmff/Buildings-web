@@ -39,6 +39,7 @@ export interface Auftrag {
   wartung_gut: number
   wartung_achtung: number
   wartung_schlecht: number
+  wartung_status?: 'geplant' | 'gestartet' | 'pausiert' | 'fertig'
 }
 
 interface Stammdaten {

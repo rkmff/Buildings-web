@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, ApiError } from '../api'
+import Dialog from '../components/Dialog'
 import Icon from '../components/Icon'
+import ObjektDialog from '../components/ObjektDialog'
 import { lang } from '../datum'
 import { Befunde, type Auftrag } from './Auftraege'
+import { minuten } from './Wartungsvorlagen'
 
 type Ergebnis = 'gut' | 'achtung' | 'schlecht' | 'neutral'
 type Typ = 'standard' | 'fuehlerkalibrierung' | 'strommessung' | 'schaltschrankmessung' | 'trafomessung'
@@ -50,10 +53,39 @@ interface WartungFoto {
   im_wartungsbericht: number
 }
 
+interface FruehererKommentar {
+  id: number
+  kommentar: string
+  name: string
+  datum: string
+  geraet_id: number | null
+  anlage_id: number
+  auftrag: string | null
+  aufgabe: string
+}
+
+interface Zeiten {
+  soll_minuten: number
+}
+
+type WartungStatus = 'geplant' | 'gestartet' | 'pausiert' | 'fertig'
+
+interface Vorschau {
+  status: WartungStatus | null
+  vorhanden: number
+  anlagen: { aufgaben: number; objekte: number; minuten: number }
+  geraete: { aufgaben: number; objekte: number; minuten: number }
+  veraltet: number[]
+  luecken: { anlagen_ohne_typ: number; geraete_nicht_pflichtig: number }
+}
+
 interface Daten {
   auftrag: Auftrag
   aufgaben: Wartungsaufgabe[]
   kommentare: Kommentar[]
+  fruehere_kommentare: FruehererKommentar[]
+  veraltet: number[]
+  zeiten: Zeiten
   fotos: WartungFoto[]
   ich: string
   darf_alles: boolean
@@ -73,6 +105,18 @@ const MODI: { wert: Modus; label: string; typen: Typ[] }[] = [
 ]
 
 const erledigt = (t: Wartungsaufgabe) => t.status === 'erledigt'
+
+const STATUS_LABEL: Record<WartungStatus, string> = { geplant: 'geplant', gestartet: 'gestartet', pausiert: 'pausiert', fertig: 'fertig' }
+const STATUS_PILLE: Record<WartungStatus, string> = { geplant: '', gestartet: ' pille-aktiv', pausiert: ' pille-achtung', fertig: ' pille-gut' }
+
+function anzahl(n: number, eins: string, viele: string) {
+  return `${n} ${n === 1 ? eins : viele}`
+}
+
+function WartungPille({ status }: { status?: WartungStatus | null }) {
+  const s = status ?? 'geplant'
+  return <span className={`status-pille${STATUS_PILLE[s]}`}>Wartung {STATUS_LABEL[s]}</span>
+}
 
 function zahl(v: unknown): string {
   return typeof v === 'number' ? v.toLocaleString('de-DE', { maximumFractionDigits: 3 }) : '–'
@@ -147,13 +191,15 @@ export function WartungListe() {
               <Link key={a.id} to={`/wartung/${a.id}`} className="karte wartung-kachel">
                 <div className="zeile-zwischen oben">
                   <strong>{a.name}</strong>
-                  {a.status && <span className="status-pille">{a.status}</span>}
+                  <WartungPille status={a.wartung_status} />
                 </div>
                 <small className="gedaempft">{[a.kunde, a.system].filter(Boolean).join(' · ')}</small>
-                <div className="fortschritt">
-                  <div style={{ width: `${prozent}%` }} />
-                  <span className="mono klein">{a.wartung_erledigt}/{a.wartung_gesamt}</span>
-                </div>
+                {a.wartung_gesamt ? (
+                  <div className="fortschritt">
+                    <div style={{ width: `${prozent}%` }} />
+                    <span className="mono klein">{a.wartung_erledigt}/{a.wartung_gesamt}</span>
+                  </div>
+                ) : <small className="gedaempft">Noch keine Aufgaben erzeugt</small>}
                 {a.techniker && <small className="gedaempft">{a.techniker}</small>}
               </Link>
             )
@@ -176,14 +222,51 @@ export default function WartungAusfuehren() {
   const [anlage, setAnlage] = useState('')
   const [suche, setSuche] = useState('')
   const [nurOffene, setNurOffene] = useLokal('buildings.wartung.nurOffene', false)
+  const [fruehereZeigen, setFruehereZeigen] = useLokal('buildings.wartung.fruehereKommentare', true)
+  const [dialog, setDialog] = useState<'ausfuehren' | 'aktualisieren' | null>(null)
+  const [bearbeite, setBearbeite] = useState<{ typ: 'anlage' | 'geraet'; id: number } | null>(null)
+  const [neuIds, setNeuIds] = useState<Set<number>>(new Set())
 
-  const laden = useCallback(() => {
-    api
-      .get<Daten>(`/api/wartung/${id}`)
-      .then(setDaten)
-      .catch((e) => setFehler(e instanceof ApiError && e.status === 404 ? 'Dieser Auftrag wurde nicht gefunden.' : e.message))
-  }, [id])
-  useEffect(laden, [laden])
+  const laden = useCallback(
+    () =>
+      api
+        .get<Daten>(`/api/wartung/${id}`)
+        .then((d) => { setDaten(d); return d })
+        .catch((e) => {
+          setFehler(e instanceof ApiError && e.status === 404 ? 'Dieser Auftrag wurde nicht gefunden.' : e.message)
+          return null
+        }),
+    [id],
+  )
+  useEffect(() => { laden() }, [laden])
+
+  const status = async (neu: WartungStatus) => {
+    try {
+      await api.post(`/api/wartung/${id}/status`, { status: neu })
+      await laden()
+    } catch (e) {
+      setMeldung((e as Error).message)
+    }
+  }
+
+  const erzeugt = async (modus: 'ausfuehren' | 'aktualisieren', neu: number) => {
+    const vorher = new Set(daten?.aufgaben.map((t) => t.id))
+    setDialog(null)
+    const d = await laden()
+    if (d && modus === 'aktualisieren') setNeuIds(new Set(d.aufgaben.filter((t) => !vorher.has(t.id)).map((t) => t.id)))
+    if (modus === 'ausfuehren') setMeldung(neu ? `Wartung gestartet, ${neu} Aufgaben erzeugt.` : 'Wartung gestartet.')
+    else setMeldung(neu ? `${neu} neue Aufgaben ergänzt, sie sind als „neu“ markiert.` : 'Alles aktuell, es fehlen keine Aufgaben.')
+  }
+
+  const entfernen = async (t: Wartungsaufgabe) => {
+    if (!window.confirm(`Aufgabe „${t.name}“ entfernen?`)) return
+    try {
+      await api.del(`/api/wartungsaufgaben/${t.id}`)
+      await laden()
+    } catch (e) {
+      setMeldung((e as Error).message)
+    }
+  }
 
   const modi = useMemo(
     () => MODI.filter((m) => daten?.aufgaben.some((t) => m.typen.includes(t.typ))),
@@ -256,6 +339,8 @@ export default function WartungAusfuehren() {
   if (!daten || !statistik) return <div className="seite"><p className="gedaempft">Wird geladen …</p></div>
 
   const offenImModus = imModus.filter((t) => !erledigt(t)).length
+  const wStatus: WartungStatus = daten.auftrag.wartung_status ?? 'geplant'
+  const veraltet = new Set(daten.veraltet)
 
   return (
     <div className="seite wartung-seite">
@@ -271,7 +356,27 @@ export default function WartungAusfuehren() {
         <div className="wartung-befunde"><Befunde a={statistik} /></div>
       </div>
 
-      {modi.length > 1 && (
+      <StatusLeiste
+        status={wStatus}
+        zeiten={daten.zeiten}
+        offen={daten.aufgaben.filter((t) => !erledigt(t)).length}
+        veraltet={daten.veraltet.length}
+        onAusfuehren={() => setDialog('ausfuehren')}
+        onAktualisieren={() => setDialog('aktualisieren')}
+        onStatus={status}
+      />
+
+      {daten.aufgaben.length === 0 && (
+        <div className="karte leer wartung-leer">
+          <p>Für diese Wartung sind noch keine Aufgaben erzeugt.</p>
+          <p className="gedaempft klein">„Wartung ausführen“ legt die Aufgaben nach den Matrizen für Anlagentypen und Gerätearten an.</p>
+          {wStatus === 'geplant'
+            ? <button type="button" className="knopf primaer" onClick={() => setDialog('ausfuehren')}>Wartung ausführen</button>
+            : wStatus !== 'fertig' && <button type="button" className="knopf" onClick={() => setDialog('aktualisieren')}>Aufgaben aktualisieren</button>}
+        </div>
+      )}
+
+      {daten.aufgaben.length > 0 && modi.length > 1 && (
         <div className="tabs" role="tablist">
           {modi.map((m) => {
             const alle = daten.aufgaben.filter((t) => m.typen.includes(t.typ))
@@ -285,7 +390,7 @@ export default function WartungAusfuehren() {
         </div>
       )}
 
-      <div className="filterleiste wartung-filter">
+      {daten.aufgaben.length > 0 && <div className="filterleiste wartung-filter">
         <select aria-label="ISP" value={isp} onChange={(e) => { setIsp(e.target.value); setAnlage('') }}>
           <option value="">Alle ISPs</option>
           {isps.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -297,13 +402,18 @@ export default function WartungAusfuehren() {
         <label className="schalter">
           <input type="checkbox" checked={nurOffene} onChange={(e) => setNurOffene(e.target.checked)} /> nur offene
         </label>
+        {daten.fruehere_kommentare.length > 0 && (
+          <label className="schalter">
+            <input type="checkbox" checked={fruehereZeigen} onChange={(e) => setFruehereZeigen(e.target.checked)} /> frühere Kommentare
+          </label>
+        )}
         <label className="suchfeld">
           <Icon name="suche" size={16} />
           <input type="search" aria-label="Aufgaben suchen" placeholder="Gerät, BMKZ, Aufgabe" value={suche} onChange={(e) => setSuche(e.target.value)} />
         </label>
-      </div>
+      </div>}
 
-      {gruppen.length === 0 && (
+      {gruppen.length === 0 && daten.aufgaben.length > 0 && (
         <div className="karte leer">
           {nurOffene && offenImModus === 0 ? 'Alle Aufgaben sind erledigt.' : 'Keine Aufgaben für diese Auswahl.'}
         </div>
@@ -318,6 +428,7 @@ export default function WartungAusfuehren() {
                 <span className="typ-marke typ-anlage">AN</span>
                 <Link to={`/objekte/anlage/${a.id}`}>{a.name}</Link>
                 <span className="zaehler">{a.aufgaben.filter(erledigt).length}/{a.aufgaben.length}</span>
+                <button type="button" className="knopf klein flach" onClick={() => setBearbeite({ typ: 'anlage', id: a.id })}>Anlage bearbeiten</button>
               </h3>
               <ul className="wartung-aufgaben">
                 {a.aufgaben.map((t) => (
@@ -325,9 +436,14 @@ export default function WartungAusfuehren() {
                     key={t.id}
                     t={t}
                     daten={daten}
+                    veraltet={veraltet.has(t.id)}
+                    neu={neuIds.has(t.id)}
+                    fruehereZeigen={fruehereZeigen}
                     onAktion={aktion}
                     onNeuLaden={laden}
                     onFehler={setMeldung}
+                    onEntfernen={() => entfernen(t)}
+                    onBearbeiten={() => t.geraet_id ? setBearbeite({ typ: 'geraet', id: t.geraet_id }) : setBearbeite({ typ: 'anlage', id: t.anlage_id })}
                   />
                 ))}
               </ul>
@@ -335,6 +451,14 @@ export default function WartungAusfuehren() {
           ))}
         </section>
       ))}
+
+      {dialog && (
+        <AusfuehrenDialog auftragId={daten.auftrag.id} modus={dialog} onClose={() => setDialog(null)} onErzeugt={(n) => erzeugt(dialog, n)} />
+      )}
+      {bearbeite && (
+        <ObjektDialog typ={bearbeite.typ} id={bearbeite.id} onClose={() => setBearbeite(null)}
+          onGespeichert={() => { setBearbeite(null); setMeldung(bearbeite.typ === 'geraet' ? 'Gerät gespeichert.' : 'Anlage gespeichert.'); laden() }} />
+      )}
 
       {meldung && (
         <div className="toast" role="alert">
@@ -348,16 +472,147 @@ export default function WartungAusfuehren() {
   )
 }
 
-function AufgabeKarte({ t, daten, onAktion, onNeuLaden, onFehler }: {
+// ---------- Status und Zeiten ----------
+
+function StatusLeiste({ status, zeiten, offen, veraltet, onAusfuehren, onAktualisieren, onStatus }: {
+  status: WartungStatus
+  zeiten: Zeiten
+  offen: number
+  veraltet: number
+  onAusfuehren: () => void
+  onAktualisieren: () => void
+  onStatus: (s: WartungStatus) => void
+}) {
+  const fertigTitel = offen ? `Noch ${anzahl(offen, "Aufgabe", "Aufgaben")} ohne Ergebnis` : undefined
+
+  return (
+    <div className={`karte wartung-status status-${status}`}>
+      <div className="wartung-status-info">
+        <WartungPille status={status} />
+        {zeiten.soll_minuten > 0 && <span className="klein">Zeitvorgabe <strong>{minuten(zeiten.soll_minuten)}</strong></span>}
+        {status === 'pausiert' && <small className="gedaempft">Zum Weitermachen auf „Fortsetzen“ klicken.</small>}
+        {veraltet > 0 && <small className="warnung">{veraltet === 1 ? "1 Aufgabe passt" : `${veraltet} Aufgaben passen`} nicht mehr zur Matrix</small>}
+      </div>
+      <div className="knopf-reihe">
+        {status === 'geplant' && <button type="button" className="knopf primaer" onClick={onAusfuehren}>Wartung ausführen</button>}
+        {(status === 'gestartet' || status === 'pausiert') && (
+          <>
+            <button type="button" className="knopf" onClick={onAktualisieren}>Aufgaben aktualisieren</button>
+            {status === 'gestartet'
+              ? <button type="button" className="knopf" onClick={() => onStatus('pausiert')}>Pausieren</button>
+              : <button type="button" className="knopf primaer" onClick={() => onStatus('gestartet')}>Fortsetzen</button>}
+            <button type="button" className={`knopf${status === 'gestartet' ? ' primaer' : ''}`} onClick={() => onStatus('fertig')} disabled={offen > 0} title={fertigTitel}>
+              Fertig
+            </button>
+          </>
+        )}
+        {status === 'fertig' && <button type="button" className="knopf" onClick={() => onStatus('gestartet')}>Wieder öffnen</button>}
+      </div>
+      {(status === 'gestartet' || status === 'pausiert') && offen > 0 && (
+        <small className="gedaempft wartung-status-hinweis">Fertig geht, sobald alle Aufgaben ein Ergebnis haben. Offen: {offen}.</small>
+      )}
+    </div>
+  )
+}
+
+function AusfuehrenDialog({ auftragId, modus, onClose, onErzeugt }: {
+  auftragId: number
+  modus: 'ausfuehren' | 'aktualisieren'
+  onClose: () => void
+  onErzeugt: (neu: number) => void
+}) {
+  const [v, setV] = useState<Vorschau | null>(null)
+  const [anlagen, setAnlagen] = useState(true)
+  const [geraete, setGeraete] = useState(true)
+  const [fehler, setFehler] = useState('')
+  const [laeuft, setLaeuft] = useState(false)
+  useEffect(() => {
+    api.get<Vorschau>(`/api/wartung/${auftragId}/vorschau`).then(setV).catch((e) => setFehler(e.message))
+  }, [auftragId])
+
+  const n = (anlagen ? v?.anlagen.aufgaben ?? 0 : 0) + (geraete ? v?.geraete.aufgaben ?? 0 : 0)
+  const min = (anlagen ? v?.anlagen.minuten ?? 0 : 0) + (geraete ? v?.geraete.minuten ?? 0 : 0)
+  const objekte = [
+    anlagen && v?.anlagen.objekte ? anzahl(v.anlagen.objekte, 'Anlage', 'Anlagen') : '',
+    geraete && v?.geraete.objekte ? anzahl(v.geraete.objekte, 'Gerät', 'Geräte') : '',
+  ].filter(Boolean).join(' und ')
+  const luecken = v ? v.luecken.anlagen_ohne_typ : 0
+
+  const los = async () => {
+    setLaeuft(true)
+    try {
+      const r = await api.post<{ neu: number }>(`/api/wartung/${auftragId}/${modus === 'ausfuehren' ? 'ausfuehren' : 'aufgaben-aktualisieren'}`, { anlagen, geraete })
+      onErzeugt(r.neu)
+    } catch (e) {
+      setFehler((e as Error).message)
+      setLaeuft(false)
+    }
+  }
+
+  return (
+    <Dialog
+      titel={modus === 'ausfuehren' ? 'Wartung ausführen' : 'Aufgaben aktualisieren'}
+      onClose={onClose}
+      aktionen={
+        <>
+          <button type="button" className="knopf" onClick={onClose}>Abbrechen</button>
+          <button type="button" className="knopf primaer" onClick={los}
+            disabled={!v || laeuft || (!anlagen && !geraete) || (modus === 'aktualisieren' && n === 0) || (modus === 'ausfuehren' && n === 0 && v.vorhanden === 0)}>
+            {modus === 'ausfuehren' ? 'Wartung starten' : n ? `${n} Aufgaben ergänzen` : 'Nichts zu ergänzen'}
+          </button>
+        </>
+      }
+    >
+      {!v ? <p className="gedaempft">{fehler || 'Matrizen werden geprüft …'}</p> : (
+        <div className="ausfuehren">
+          <p>{modus === 'ausfuehren' ? 'Für welche Objekte sollen Aufgaben erzeugt werden?' : 'Die Matrizen werden neu geprüft. Fehlende Aufgaben kommen dazu, vorhandene bleiben unverändert.'}</p>
+          <label className="ausfuehren-wahl">
+            <input type="checkbox" checked={anlagen} onChange={(e) => setAnlagen(e.target.checked)} />
+            <span><strong>Anlagenbasiert</strong><small className="gedaempft">{anzahl(v.anlagen.aufgaben, 'Aufgabe', 'Aufgaben')} für {anzahl(v.anlagen.objekte, 'Anlage', 'Anlagen')} · {minuten(v.anlagen.minuten)}</small></span>
+          </label>
+          <label className="ausfuehren-wahl">
+            <input type="checkbox" checked={geraete} onChange={(e) => setGeraete(e.target.checked)} />
+            <span><strong>Gerätebasiert</strong><small className="gedaempft">{anzahl(v.geraete.aufgaben, 'Aufgabe', 'Aufgaben')} für {anzahl(v.geraete.objekte, 'Gerät', 'Geräte')} · {minuten(v.geraete.minuten)}</small></span>
+          </label>
+          <p className="hinweis-box">
+            {n ? `Es ${n === 1 ? 'wird 1 Aufgabe' : `werden ${n} Aufgaben`} für ${objekte} erzeugt, Zeitvorgabe gesamt ${minuten(min)}.`
+              : v.vorhanden ? `Es fehlen keine Aufgaben, ${v.vorhanden} sind schon vorhanden.` : 'Nach den Matrizen entstehen für dieses System keine Aufgaben.'}
+            {modus === 'ausfuehren' && v.vorhanden > 0 && n > 0 ? ` ${v.vorhanden} sind schon vorhanden.` : ''}
+          </p>
+          {modus === 'aktualisieren' && v.veraltet.length > 0 && (
+            <p className="klein warnung">{v.veraltet.length} offene Aufgaben passen nicht mehr zur Matrix. Sie sind markiert und lassen sich an der Aufgabe entfernen.</p>
+          )}
+          {luecken > 0 && (
+            <p className="klein gedaempft">
+              In diesem System {v.luecken.anlagen_ohne_typ === 1 ? 'hat 1 Anlage' : `haben ${v.luecken.anlagen_ohne_typ} Anlagen`} keinen Anlagentyp.
+              {' '}Für sie entstehen keine Anlagenaufgaben. <Link to="/stammdaten/wartungsvorlagen?tab=luecken">Anlagentyp setzen</Link>
+            </p>
+          )}
+          {fehler && <p className="fehler" role="alert">{fehler}</p>}
+        </div>
+      )}
+    </Dialog>
+  )
+}
+
+function AufgabeKarte({ t, daten, veraltet, neu, fruehereZeigen, onAktion, onNeuLaden, onFehler, onEntfernen, onBearbeiten }: {
   t: Wartungsaufgabe
   daten: Daten
+  veraltet: boolean
+  neu: boolean
+  fruehereZeigen: boolean
   onAktion: (fn: () => Promise<{ aufgabe: Wartungsaufgabe }>) => Promise<boolean>
   onNeuLaden: () => void
   onFehler: (text: string) => void
+  onEntfernen: () => void
+  onBearbeiten: () => void
 }) {
   const [offen, setOffen] = useState<'' | 'kommentare' | 'fotos' | 'info'>('')
   const [laeuft, setLaeuft] = useState(false)
+  const [alleFrueheren, setAlleFrueheren] = useState(false)
   const kommentare = daten.kommentare.filter((k) => k.aufgabe_id === t.id)
+  const fruehere = daten.fruehere_kommentare.filter((k) =>
+    t.geraet_id ? k.geraet_id === t.geraet_id : k.geraet_id === null && k.anlage_id === t.anlage_id)
   const fotos = daten.fotos.filter((f) => f.aufgabe_id === t.id)
   const fertig = erledigt(t)
   const messung = t.typ !== 'standard'
@@ -378,18 +633,34 @@ function AufgabeKarte({ t, daten, onAktion, onNeuLaden, onFehler }: {
     <li className={`karte wartung-aufgabe${fertig ? ` erledigt ergebnis-rand-${t.ergebnis}` : ''}`}>
       <div className="zeile-zwischen oben">
         <div className="wartung-aufgabe-text">
-          <strong>{t.name}</strong>
-          <small className="gedaempft">
-            {t.geraet_id ? [t.bmkz, t.geraet].filter(Boolean).join(' · ') : 'Anlage'}
-            {t.einbauort ? ` · ${t.einbauort}` : ''}
-          </small>
+          <strong className="wartung-objekt">
+            {t.geraet_id
+              ? [t.bmkz, t.geraet, t.einbauort].filter(Boolean).join(' · ')
+              : `Anlage ${t.anlage}`}
+          </strong>
+          <span className="wartung-aufgabe-name">
+            {t.name}
+            {neu && <span className="status-pille pille-aktiv">neu</span>}
+            {veraltet && <span className="status-pille pille-achtung" title="Vorlage nicht mehr in der Matrix oder Gerät nicht mehr wartungspflichtig">passt nicht mehr</span>}
+          </span>
         </div>
-        {fertig && (
-          <button type="button" className="knopf klein" onClick={oeffnen} disabled={laeuft}>Wieder öffnen</button>
-        )}
+        <div className="zeile">
+          {veraltet && !fertig && kommentare.length === 0 && fotos.length === 0 && (
+            <button type="button" className="knopf klein gefahr" onClick={onEntfernen}>Entfernen</button>
+          )}
+          {fertig && (
+            <button type="button" className="knopf klein" onClick={oeffnen} disabled={laeuft}>Wieder öffnen</button>
+          )}
+        </div>
       </div>
 
       {messung && <Messformular t={t} onAktion={onAktion} />}
+      {messung && !fertig && (
+        <div className="neutral-zeile">
+          <button type="button" className="ergebnis-knopf ergebnis-neutral" disabled={laeuft} onClick={() => ergebnis('neutral')}>neutral</button>
+          <small className="gedaempft">ohne Messwerte abschließen, erscheint nicht im Bericht</small>
+        </div>
+      )}
 
       {(!messung || fertig) && (
         <div className="ergebnis-knoepfe" role="group" aria-label={`Ergebnis für ${t.name}`}>
@@ -411,11 +682,12 @@ function AufgabeKarte({ t, daten, onAktion, onNeuLaden, onFehler }: {
           <small className="gedaempft">Erledigt {lang(t.erledigt_datum)} {t.erledigt_uhrzeit?.slice(0, 5)}{t.techniker ? ` · ${t.techniker}` : ''}</small>
         ) : <span />}
         <div className="zeile">
+          <button type="button" className="knopf klein" onClick={onBearbeiten}>{t.geraet_id ? 'Gerät' : 'Anlage'} bearbeiten</button>
           {t.beschreibung && (
             <button type="button" className={`knopf klein${offen === 'info' ? ' aktiv' : ''}`} aria-expanded={offen === 'info'} onClick={() => umschalten('info')}>Info</button>
           )}
           <button type="button" className={`knopf klein${offen === 'kommentare' ? ' aktiv' : ''}`} aria-expanded={offen === 'kommentare'} onClick={() => umschalten('kommentare')}>
-            Kommentare{kommentare.length > 0 && <span className="zaehler">{kommentare.length}</span>}
+            Kommentar{kommentare.length > 0 && <span className="zaehler">{kommentare.length}</span>}
           </button>
           <button type="button" className={`knopf klein${offen === 'fotos' ? ' aktiv' : ''}`} aria-expanded={offen === 'fotos'} onClick={() => umschalten('fotos')}>
             <Icon name="foto" size={16} />{fotos.length > 0 && <span className="zaehler">{fotos.length}</span>}
@@ -425,8 +697,27 @@ function AufgabeKarte({ t, daten, onAktion, onNeuLaden, onFehler }: {
       </div>
 
       {offen === 'info' && <p className="mehrzeilig wartung-info">{t.beschreibung}</p>}
-      {offen === 'kommentare' && (
-        <Kommentare aufgabeId={t.id} kommentare={kommentare} ich={daten.ich} darfAlles={daten.darf_alles} onNeuLaden={onNeuLaden} onFehler={onFehler} />
+      {(kommentare.length > 0 || offen === 'kommentare') && (
+        <Kommentare aufgabeId={t.id} kommentare={kommentare} ich={daten.ich} darfAlles={daten.darf_alles}
+          formular={offen === 'kommentare'} onNeuLaden={onNeuLaden} onFehler={onFehler} />
+      )}
+      {fruehereZeigen && fruehere.length > 0 && (
+        <div className="fruehere-kommentare">
+          <small className="gedaempft">Aus früheren Wartungen {t.geraet_id ? 'dieses Geräts' : 'dieser Anlage'}</small>
+          <ul>
+            {(alleFrueheren ? fruehere : fruehere.slice(0, 2)).map((k) => (
+              <li key={k.id}>
+                <p className="mehrzeilig">{k.kommentar}</p>
+                <small className="gedaempft">{k.name} · {lang(k.datum)}{k.auftrag ? ` · ${k.auftrag}` : ''}</small>
+              </li>
+            ))}
+          </ul>
+          {fruehere.length > 2 && (
+            <button type="button" className="link-knopf klein" onClick={() => setAlleFrueheren((x) => !x)}>
+              {alleFrueheren ? 'Weniger anzeigen' : `Alle ${fruehere.length} anzeigen`}
+            </button>
+          )}
+        </div>
       )}
       {offen === 'fotos' && <Fotos aufgabeId={t.id} fotos={fotos} onNeuLaden={onNeuLaden} onFehler={onFehler} />}
     </li>
@@ -580,11 +871,12 @@ function Messformular({ t, onAktion }: { t: Wartungsaufgabe; onAktion: (fn: () =
 
 // ---------- Kommentare ----------
 
-function Kommentare({ aufgabeId, kommentare, ich, darfAlles, onNeuLaden, onFehler }: {
+function Kommentare({ aufgabeId, kommentare, ich, darfAlles, formular, onNeuLaden, onFehler }: {
   aufgabeId: number
   kommentare: Kommentar[]
   ich: string
   darfAlles: boolean
+  formular: boolean
   onNeuLaden: () => void
   onFehler: (t: string) => void
 }) {
@@ -617,8 +909,7 @@ function Kommentare({ aufgabeId, kommentare, ich, darfAlles, onNeuLaden, onFehle
 
   return (
     <div className="wartung-bereich">
-      {kommentare.length === 0 && <p className="gedaempft klein">Noch keine Kommentare.</p>}
-      <ul className="liste">
+      {kommentare.length > 0 && <ul className="liste">
         {kommentare.map((k) => (
           <li key={k.id} className="liste-eintrag zeile-zwischen oben">
             <div>
@@ -635,14 +926,14 @@ function Kommentare({ aufgabeId, kommentare, ich, darfAlles, onNeuLaden, onFehle
             )}
           </li>
         ))}
-      </ul>
-      <form className="kommentar-formular" onSubmit={senden}>
+      </ul>}
+      {formular && <form className="kommentar-formular" onSubmit={senden}>
         <textarea rows={2} aria-label="Neuer Kommentar" placeholder="Kommentar schreiben" value={text} onChange={(e) => setText(e.target.value)} />
         <div className="zeile-zwischen">
           <label className="aufgabe"><input type="checkbox" checked={intern} onChange={(e) => setIntern(e.target.checked)} /> intern (nicht im Kundenbericht)</label>
           <button type="submit" className="knopf primaer klein" disabled={laeuft || !text.trim()}>Senden</button>
         </div>
-      </form>
+      </form>}
     </div>
   )
 }
@@ -658,7 +949,7 @@ function Fotos({ aufgabeId, fotos, onNeuLaden, onFehler }: {
   const eingabe = useRef<HTMLInputElement>(null)
   const [laeuft, setLaeuft] = useState(false)
 
-  const hochladen = async (dateien: FileList | null) => {
+  const hochladen = async (dateien: FileList | File[] | null) => {
     if (!dateien?.length) return
     const daten = new FormData()
     for (const d of Array.from(dateien)) daten.append('fotos', d)
@@ -671,6 +962,18 @@ function Fotos({ aufgabeId, fotos, onNeuLaden, onFehler }: {
     }
     setLaeuft(false)
     if (eingabe.current) eingabe.current.value = ''
+  }
+  // Screenshot aus der Zwischenablage (Strg+V), z. B. von der GLT-Oberfläche
+  const einfuegen = (e: React.ClipboardEvent) => {
+    const stempel = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')
+    const bilder = Array.from(e.clipboardData.items)
+      .filter((i) => i.kind === 'file' && i.type.startsWith('image/'))
+      .map((i) => i.getAsFile())
+      .filter((f): f is File => !!f)
+      .map((f, n) => new File([f], `Screenshot_${stempel}${n ? `_${n + 1}` : ''}.${f.type.split('/')[1] || 'png'}`, { type: f.type }))
+    if (!bilder.length) return
+    e.preventDefault()
+    hochladen(bilder)
   }
   const bericht = async (f: WartungFoto, an: boolean) => {
     try {
@@ -691,7 +994,7 @@ function Fotos({ aufgabeId, fotos, onNeuLaden, onFehler }: {
   }
 
   return (
-    <div className="wartung-bereich">
+    <div className="wartung-bereich" onPaste={einfuegen}>
       <div className="wartung-fotos">
         {fotos.map((f) => (
           <figure key={f.id} className="wartung-foto">
@@ -712,6 +1015,10 @@ function Fotos({ aufgabeId, fotos, onNeuLaden, onFehler }: {
           <Icon name="foto" size={22} />
           <span>{laeuft ? 'Lädt hoch …' : 'Foto aufnehmen oder wählen'}</span>
         </button>
+        <div className="foto-neu einfuege-zone nur-desktop" tabIndex={0} role="button" aria-label="Screenshot einfügen: hier klicken, dann Strg+V">
+          <span className="mono">Strg+V</span>
+          <span>Screenshot hier einfügen</span>
+        </div>
       </div>
       <input ref={eingabe} type="file" accept="image/*" multiple hidden onChange={(e) => hochladen(e.target.files)} />
     </div>

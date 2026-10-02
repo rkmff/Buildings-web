@@ -473,3 +473,85 @@ def test_ausruestung(client):
     assert all(e["id"] != auid for e in client.get("/api/ausruestung?ansicht=alle").json["eintraege"])
     assert any(e["id"] == auid for e in client.get("/api/ausruestung?ansicht=alle&ausgemusterte=1").json["eintraege"])
     assert client.delete(f"/api/ausruestung/{auid}").status_code == 409  # hat ein Foto
+
+
+def test_wartungsvorlagen_und_matrix(client):
+    login(client, "RKO")
+    d = client.get("/api/wartungsvorlagen").json
+    assert d["darf_bearbeiten"] and len(d["vorlagen"]) >= 1 and d["luecken"]["anlagen_ohne_typ"] >= 0
+    r = client.post("/api/wartungsvorlagen", json={"kurzbezeichnung": "Filter prüfen", "zeitvorgabe": "7,5", "gilt_fuer_geraete": True,
+                                                   "vdma_position": "24186-1 2.3", "taetigkeit": "Inspektion"})
+    assert r.status_code == 201, r.json
+    v = r.json["vorlage"]
+    assert (v["zeitvorgabe"], v["vdma_position"], v["taetigkeit"]) == (7.5, "24186-1 2.3", "Inspektion")
+    assert client.post("/api/wartungsvorlagen", json={"kurzbezeichnung": "X"}).status_code == 400  # gilt für nichts
+    art = d["geraetearten"][0]["id"]
+    typ = d["anlagentypen"][0]["id"]
+    assert client.put("/api/wartungsvorlagen/matrix/geraete", json={"vorlage_id": v["id"], "typ_id": art, "an": True}).status_code == 200
+    assert client.put("/api/wartungsvorlagen/matrix/anlagen", json={"vorlage_id": v["id"], "typ_id": typ, "an": True}).status_code == 400
+    assert [v["id"], art] in client.get("/api/wartungsvorlagen").json["matrix"]["geraete"]
+    # gilt nicht mehr für Geräte: Häkchen fallen weg
+    assert client.put(f"/api/wartungsvorlagen/{v['id']}", json={**v, "gilt_fuer_geraete": False, "gilt_fuer_anlagen": True}).status_code == 200
+    assert [v["id"], art] not in client.get("/api/wartungsvorlagen").json["matrix"]["geraete"]
+    assert client.delete(f"/api/wartungsvorlagen/{v['id']}").status_code == 200
+    benutzt = next(x for x in d["vorlagen"] if x["verwendet"])
+    assert client.delete(f"/api/wartungsvorlagen/{benutzt['id']}").status_code == 409
+
+    l = client.get("/api/wartungsvorlagen/luecken").json
+    if l["anlagen"]:
+        r = client.post("/api/wartungsvorlagen/luecken", json={"anlagentypen": {str(l["anlagen"][0]["id"]): typ}})
+        assert r.json["geaendert"] == 1
+
+    client.post("/api/auth/logout")
+    login(client, "FRF")
+    assert client.get("/api/wartungsvorlagen").json["darf_bearbeiten"] is False
+    assert client.post("/api/wartungsvorlagen", json={"kurzbezeichnung": "X", "gilt_fuer_geraete": True}).status_code == 403
+
+
+def test_wartung_ablauf(client):
+    login(client, "RKO")
+    stamm = client.get("/api/auftraege/stammdaten").json
+    wartung = next(t for t in stamm["typen"] if t["name"] == "Wartung")
+    d = client.get("/api/wartungsvorlagen").json
+    # System mit wartungspflichtigen Geräten suchen, deren Art eine Vorlage hat
+    system = None
+    for s in stamm["systeme"]:
+        a = client.post("/api/auftraege", json={"name": "Wartung Test", "system_id": s["id"], "typ_id": wartung["id"], "status_id": 2}).json["auftrag"]
+        v = client.get(f"/api/wartung/{a['id']}/vorschau").json
+        if v["geraete"]["aufgaben"]:
+            system = s
+            break
+    assert system, "kein System mit erzeugbaren Geräteaufgaben"
+    atid = a["id"]
+    assert v["status"] == "geplant" and v["vorhanden"] == 0
+    assert any(x["id"] == atid for x in client.get("/api/wartung").json["auftraege"])  # erscheint auch ohne Aufgaben
+
+    r = client.post(f"/api/wartung/{atid}/ausfuehren", json={"anlagen": False, "geraete": True})
+    assert r.status_code == 200 and r.json["neu"] == v["geraete"]["aufgaben"]
+    det = client.get(f"/api/wartung/{atid}").json
+    assert det["auftrag"]["wartung_status"] == "gestartet" and det["auftrag"]["status"] == "in Arbeit"
+    assert det["zeiten"]["soll_minuten"] >= 0
+    assert all(t["geraet_id"] for t in det["aufgaben"])
+    # erneut aktualisieren legt nichts doppelt an
+    assert client.post(f"/api/wartung/{atid}/aufgaben-aktualisieren", json={"anlagen": False, "geraete": True}).json["neu"] == 0
+
+    # Gerät nicht mehr wartungspflichtig: Aufgabe gilt als veraltet und lässt sich entfernen
+    t = det["aufgaben"][0]
+    client.put(f"/api/objekte/geraet/{t['geraet_id']}", json={"werte": {"GRWartungspflichtig": False}})
+    veraltet = client.get(f"/api/wartung/{atid}").json["veraltet"]
+    assert t["id"] in veraltet
+    assert client.delete(f"/api/wartungsaufgaben/{t['id']}").status_code == 200
+    client.put(f"/api/objekte/geraet/{t['geraet_id']}", json={"werte": {"GRWartungspflichtig": True}})
+    assert client.post(f"/api/wartung/{atid}/aufgaben-aktualisieren", json={"anlagen": False, "geraete": True}).json["neu"] >= 1
+
+    assert client.post(f"/api/wartung/{atid}/status", json={"status": "pausiert"}).status_code == 200
+    assert client.get(f"/api/wartung/{atid}").json["auftrag"]["wartung_status"] == "pausiert"
+    r = client.post(f"/api/wartung/{atid}/status", json={"status": "fertig"})
+    assert r.status_code == 409 and "ohne Ergebnis" in r.json["message"]
+    assert client.post(f"/api/wartung/{atid}/status", json={"status": "geplant"}).status_code == 409
+    for aufgabe in client.get(f"/api/wartung/{atid}").json["aufgaben"]:
+        assert client.post(f"/api/wartungsaufgaben/{aufgabe['id']}/ergebnis", json={"ergebnis": "gut"}).status_code == 200
+    assert client.post(f"/api/wartung/{atid}/status", json={"status": "fertig"}).status_code == 200
+    det = client.get(f"/api/wartung/{atid}").json
+    assert det["auftrag"]["status"] == "erledigt"
+    assert client.post(f"/api/wartung/{atid}/aufgaben-aktualisieren", json={}).status_code == 409

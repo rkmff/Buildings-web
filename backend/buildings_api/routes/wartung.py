@@ -9,6 +9,7 @@ from ..auth import has_full_access, login_required
 from ..db import audit_user, get_db, row, rows
 from .auftraege import LISTE_SQL
 from .me import AKTIVER_STATUS_SQL
+from .wartung_ablauf import veraltete, zeiten
 
 bp = Blueprint("wartung", __name__)
 
@@ -38,7 +39,8 @@ def liste():
     """Aufträge mit Wartungsaufgaben, eigene zuerst."""
     q = str(request.args.get("q") or "").strip()
     sql = LISTE_SQL + f"""
-        WHERE EXISTS (SELECT 1 FROM wartungsaufgaben w WHERE w.auftrag_id=a.ATID)
+        WHERE (EXISTS (SELECT 1 FROM wartungsaufgaben w WHERE w.auftrag_id=a.ATID)
+               OR LOWER(TRIM(COALESCE(ta.TAName,'')))='wartung')
     """
     params: list = []
     if request.args.get("alle") != "1":
@@ -70,7 +72,7 @@ AUFGABE_SQL = """
            g.GRID AS geraet_id, g.GRName AS geraet, g.GRBMKZ AS bmkz, g.GREinbauort AS einbauort,
            w.kalibrierung_gemessen, w.kalibrierung_tatsaechlich, w.kalibrierung_offset_alt, w.kalibrierung_offset_neu,
            COALESCE(v.kalibrierung_warn_grenze, .5) AS warn_grenze,
-           COALESCE(v.kalibrierung_rot_grenze, 1.0) AS rot_grenze,
+           COALESCE(v.kalibrierung_rot_grenze, 1.0) AS rot_grenze, v.vdma_position, v.taetigkeit,
            w.strom_spannung, w.strom_l1, w.strom_l2, w.strom_l3,
            w.schalt_u_l1_l2, w.schalt_u_l2_l3, w.schalt_u_l3_l1, w.schalt_u_l1_n, w.schalt_u_l2_n, w.schalt_u_l3_n,
            w.schalt_i_l1, w.schalt_i_l2, w.schalt_i_l3, w.schalt_i_n,
@@ -126,11 +128,30 @@ def detail(atid: int):
             (atid,),
         )
     )
+    # Kommentare aus früheren Wartungen derselben Geräte bzw. Anlagen
+    fruehere = rows(
+        db.execute(
+            """SELECT k.kommentar_id AS id, k.kommentar, k.name, k.datum, w.geraet_id, w.anlage_id,
+                      a.ATName AS auftrag, w.aufgabenname AS aufgabe
+               FROM wartungsaufgaben_kommentare k
+               JOIN wartungsaufgaben w ON w.wartungsaufgabe_id=k.wartungsaufgabe_id
+               LEFT JOIN "tblAufTräge" a ON a.ATID=w.auftrag_id
+               WHERE COALESCE(w.auftrag_id,0)<>:at AND (
+                     w.geraet_id IN (SELECT geraet_id FROM wartungsaufgaben WHERE auftrag_id=:at AND geraet_id IS NOT NULL)
+                  OR (w.geraet_id IS NULL AND w.anlage_id IN
+                        (SELECT anlage_id FROM wartungsaufgaben WHERE auftrag_id=:at AND geraet_id IS NULL)))
+               ORDER BY k.datum DESC, k.kommentar_id DESC""",
+            {"at": atid},
+        )
+    )
     return {
         "ok": True,
         "auftrag": auftrag,
         "aufgaben": aufgaben,
         "kommentare": kommentare,
+        "fruehere_kommentare": fruehere,
+        "veraltet": veraltete(db, atid),
+        "zeiten": zeiten(db, atid),
         "fotos": fotos,
         "ich": audit_user(),
         "darf_alles": has_full_access(),

@@ -1,0 +1,2 @@
+*.bat text eol=crlf
+testpaket/*.txt text eol=crlf

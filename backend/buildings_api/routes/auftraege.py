@@ -31,6 +31,7 @@ LISTE_SQL = f"""
            COALESCE(NULLIF(a.ATFarbe,''), ta.TAPlanungsfarbe, '#16a34a') AS farbe,
            a.ATPlanTage AS plan_tage, a.ATPlanStunden AS plan_stunden,
            COALESCE(a.web_geaendert_am, a.web_erstellt_am) AS geaendert_am,
+           COALESCE(a.wartung_status, 'geplant') AS wartung_status,
            {WARTUNG_STATS_SQL}
     FROM "tblAufTräge" a
     LEFT JOIN "tbKundenSysteme" s ON s.KSID=a.ATKS
