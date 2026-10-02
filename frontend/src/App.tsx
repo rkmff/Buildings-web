@@ -8,6 +8,7 @@ import Login from './pages/Login'
 import MeineSeite from './pages/MeineSeite'
 import PasswortAendern from './pages/PasswortAendern'
 import Platzhalter from './pages/Platzhalter'
+import Wochenplanung from './pages/Wochenplanung'
 import WartungAusfuehren, { WartungListe } from './pages/Wartung'
 
 export default function App() {
@@ -29,7 +30,7 @@ export default function App() {
         <Route path="auftraege/:id" element={<Auftraege />} />
         <Route path="wartung" element={<WartungListe />} />
         <Route path="wartung/:id" element={<WartungAusfuehren key="wartung" />} />
-        <Route path="wochenplanung" element={<Platzhalter titel="Wochenplanung" />} />
+        <Route path="wochenplanung" element={<Wochenplanung />} />
         <Route path="mitarbeiter" element={<Platzhalter titel="Mitarbeiter" />} />
         <Route path="ausruestung" element={<Platzhalter titel="Ausrüstung" />} />
         <Route path="berichte" element={<Platzhalter titel="Berichte" />} />

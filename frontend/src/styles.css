@@ -481,6 +481,44 @@ ul { margin: 0; padding: 0; list-style: none; }
 .messwerte-anzeige dt { font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
 .messwerte-anzeige dd { margin: 0; }
 
+/* ---------- Team-Wochenplanung ---------- */
+.team-seite { --team-name-breite: 190px; display: flex; flex-direction: column; min-height: 100vh; }
+.team-kopf { padding-bottom: 12px; }
+.team-bereich { display: flex; gap: 16px; align-items: flex-start; padding: 0 32px 40px; }
+.team-raster-karte { flex: 1; min-width: 0; padding: 0; overflow: auto; max-height: calc(100vh - 140px); }
+.team-raster { display: flex; flex-direction: column; width: 100%; }
+.team-zeile { display: grid; grid-template-columns: var(--team-spalten); column-gap: 3px; }
+.team-name-zelle {
+  grid-column: 1; grid-row: 1 / -1; position: sticky; left: 0; z-index: 3; background: var(--surface);
+  display: flex; align-items: center; gap: 8px; padding: 0 10px 0 14px; border-right: 1px solid var(--line); min-width: 0;
+}
+.team-kw, .team-tage { position: sticky; z-index: 4; background: var(--surface); }
+.team-kw { top: 0; height: 26px; }
+.team-tage { top: 26px; height: 40px; border-bottom: 1px solid var(--line); }
+.team-kw .team-name-zelle, .team-tage .team-name-zelle { z-index: 5; }
+.team-kw-label { grid-row: 1; align-self: end; font-size: 12px; font-weight: 600; color: var(--text-2); padding-left: 4px; border-left: 2px solid var(--line-2); }
+.team-tag { grid-row: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 12px; line-height: 1.15; color: var(--text-2); border-radius: 6px; margin: 4px 0; }
+.team-tag strong { color: var(--text); font-size: 13px; }
+.team-tag.wochenende { opacity: 0.6; }
+.team-tag.heute { background: var(--accent); color: var(--on-accent); }
+.team-tag.heute strong { color: var(--on-accent); }
+.team-person { grid-template-rows: 46px 5px; padding: 4px 0 2px; border-bottom: 1px solid var(--surface-3); }
+.team-person:hover .team-name-zelle, .team-person:hover { background: var(--surface-2); }
+.team-person.nur-lesen .team-zelle { border-style: solid; border-color: transparent; }
+.team-name-text { display: flex; flex-direction: column; min-width: 0; }
+.team-name-text strong { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.team-name-text small { font-size: 11px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.team-zelle { grid-row: 1; border-radius: 6px; border: 1px dashed var(--line); background: var(--surface); transition: background 0.1s, border-color 0.1s; }
+.team-zelle.wochenende { background: var(--wochenende); border-color: transparent; }
+.team-zelle.feiertag { background: repeating-linear-gradient(135deg, var(--wochenende) 0 6px, var(--surface-3) 6px 12px); border-color: transparent; }
+.team-zelle.ablegbar { border-color: var(--line-2); }
+.team-zelle.ziel { background: var(--accent-soft); border: 2px solid var(--accent); }
+.segment-eintrag.team-segment { grid-row: 1; padding: 3px 10px; }
+.team-bereitschaft { grid-row: 2; height: 4px; align-self: center; border-radius: 2px; background: var(--standby); }
+.team-panel { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; position: sticky; top: 16px; max-height: calc(100vh - 140px); overflow: hidden; }
+.team-auftraege { min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.team-auftrag-liste { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; min-height: 0; padding-right: 2px; }
+
 /* ---------- Tablet und Handy ---------- */
 @media (max-width: 1200px) {
   .karten-raster.drei { grid-template-columns: 1fr 1fr; }
@@ -534,4 +572,10 @@ ul { margin: 0; padding: 0; list-style: none; }
   .messfelder.viele { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .messfelder.vier { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .wartung-anlage-titel { top: 56px; }
+  .team-seite { --team-name-breite: 112px; }
+  .team-bereich { flex-direction: column; align-items: stretch; padding: 0 16px 32px; }
+  .team-raster-karte { max-height: none; }
+  .team-panel { width: auto; position: static; max-height: 70vh; }
+  .team-name-zelle { padding: 0 6px 0 8px; }
+  .team-name-zelle .avatar { display: none; }
 }

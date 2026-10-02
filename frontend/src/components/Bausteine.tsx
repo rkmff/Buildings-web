@@ -5,7 +5,7 @@ import type { Abwesenheitsart, AuftragKurz } from '../types'
 import type { DragDaten } from './Planungskalender'
 import Icon from './Icon'
 
-function ZiehChip({ id, daten, children, className, style }: {
+export function ZiehChip({ id, daten, children, className, style }: {
   id: string
   daten: DragDaten
   children: ReactNode

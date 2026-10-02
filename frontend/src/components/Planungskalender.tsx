@@ -79,7 +79,7 @@ function Segment({
   )
 }
 
-function Griff({ eintrag, kante }: { eintrag: Planungseintrag; kante: 'start' | 'ende' }) {
+export function Griff({ eintrag, kante }: { eintrag: Planungseintrag; kante: 'start' | 'ende' }) {
   const { attributes, listeners, setNodeRef } = useDraggable({
     id: `r-${eintrag.id}-${kante}`,
     data: { art: 'resize', kante, eintrag } satisfies DragDaten,
