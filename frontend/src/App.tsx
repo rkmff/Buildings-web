@@ -8,6 +8,8 @@ import Login from './pages/Login'
 import MeineSeite from './pages/MeineSeite'
 import PasswortAendern from './pages/PasswortAendern'
 import Platzhalter from './pages/Platzhalter'
+import Mitarbeiter from './pages/Mitarbeiter'
+import Stammdaten from './pages/Stammdaten'
 import Wochenplanung from './pages/Wochenplanung'
 import WartungAusfuehren, { WartungListe } from './pages/Wartung'
 
@@ -31,10 +33,12 @@ export default function App() {
         <Route path="wartung" element={<WartungListe />} />
         <Route path="wartung/:id" element={<WartungAusfuehren key="wartung" />} />
         <Route path="wochenplanung" element={<Wochenplanung />} />
-        <Route path="mitarbeiter" element={<Platzhalter titel="Mitarbeiter" />} />
+        <Route path="mitarbeiter" element={<Mitarbeiter />} />
+        <Route path="mitarbeiter/:id" element={<Mitarbeiter />} />
         <Route path="ausruestung" element={<Platzhalter titel="Ausrüstung" />} />
         <Route path="berichte" element={<Platzhalter titel="Berichte" />} />
-        <Route path="stammdaten" element={<Platzhalter titel="Stammdaten" />} />
+        <Route path="stammdaten" element={<Stammdaten />} />
+        <Route path="stammdaten/:slug" element={<Stammdaten />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

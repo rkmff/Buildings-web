@@ -12,6 +12,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core'
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { Link } from 'react-router-dom'
 import { api, ApiError } from '../api'
 import { AuftragChip, ZiehChip } from '../components/Bausteine'
 import Dialog from '../components/Dialog'
@@ -349,7 +350,7 @@ function TeamRaster({ daten, tage, onEintragKlick }: {
             <div className="team-name-zelle">
               <span className="avatar mini">{initialen(m)}</span>
               <span className="team-name-text">
-                <strong>{name(m)}</strong>
+                <Link to={`/mitarbeiter/${m.id}`}><strong>{name(m)}</strong></Link>
                 {m.funktion && <small>{m.funktion}</small>}
               </span>
             </div>
