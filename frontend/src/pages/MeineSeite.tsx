@@ -222,7 +222,7 @@ export default function MeineSeite() {
       </DndContext>
 
       <div className="karten-raster drei">
-        <AufgabenKarte aufgaben={uebersicht?.aufgaben ?? []} onErledigt={aufgabeUmschalten} onNeu={uebersichtLaden} onFehler={setMeldung} />
+        <AufgabenKarte aufgaben={uebersicht?.aufgaben ?? []} auftraege={uebersicht?.auftraege ?? []} onErledigt={aufgabeUmschalten} onNeu={uebersichtLaden} onFehler={setMeldung} />
 
         <section className="karte">
           <div className="karte-kopf">
@@ -360,19 +360,25 @@ function ZiehVorschau({ daten }: { daten: DragDaten }) {
   return <div className="zieh-vorschau rand">{daten.kante === 'start' ? 'Neuer Beginn' : 'Neues Ende'}</div>
 }
 
-function AufgabenKarte({ aufgaben, onErledigt, onNeu, onFehler }: {
+function AufgabenKarte({ aufgaben, auftraege, onErledigt, onNeu, onFehler }: {
   aufgaben: Aufgabe[]
+  auftraege: AuftragKurz[]
   onErledigt: (a: Aufgabe) => void
   onNeu: () => Promise<void>
   onFehler: (m: string) => void
 }) {
   const [neu, setNeu] = useState<string | null>(null)
+  const [auftragId, setAuftragId] = useState(0)
 
   async function anlegen(e: FormEvent) {
     e.preventDefault()
     if (!neu?.trim()) return
+    if (!auftragId) {
+      onFehler('Bitte einen Auftrag für die Aufgabe wählen.')
+      return
+    }
     try {
-      await api.post('/api/me/aufgaben', { titel: neu.trim() })
+      await api.post('/api/me/aufgaben', { titel: neu.trim(), auftrag_id: auftragId })
       setNeu(null)
       await onNeu()
     } catch (err) {
@@ -391,6 +397,10 @@ function AufgabenKarte({ aufgaben, onErledigt, onNeu, onFehler }: {
       {neu !== null && (
         <form className="inline-formular" onSubmit={anlegen}>
           <input autoFocus aria-label="Titel der neuen Aufgabe" placeholder="Was ist zu tun?" value={neu} onChange={(e) => setNeu(e.target.value)} />
+          <select aria-label="Auftrag" value={auftragId} onChange={(e) => setAuftragId(Number(e.target.value))}>
+            <option value={0}>Auftrag wählen …</option>
+            {auftraege.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
           <button type="submit" className="knopf primaer">Anlegen</button>
           <button type="button" className="knopf" onClick={() => setNeu(null)}>Abbrechen</button>
         </form>

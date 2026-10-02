@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth'
 import Layout from './components/Layout'
+import Auftraege from './pages/Auftraege'
 import Einstellungen from './pages/Einstellungen'
 import KundenAnlagen from './pages/KundenAnlagen'
 import Login from './pages/Login'
@@ -23,7 +24,8 @@ export default function App() {
         <Route path="objekte/:typ/:id" element={<KundenAnlagen />} />
         <Route path="einstellungen" element={<Einstellungen />} />
         <Route path="passwort" element={<PasswortAendern />} />
-        <Route path="auftraege" element={<Platzhalter titel="Aufträge" />} />
+        <Route path="auftraege" element={<Auftraege />} />
+        <Route path="auftraege/:id" element={<Auftraege />} />
         <Route path="wartung" element={<Platzhalter titel="Wartung" />} />
         <Route path="wochenplanung" element={<Platzhalter titel="Wochenplanung" />} />
         <Route path="mitarbeiter" element={<Platzhalter titel="Mitarbeiter" />} />
