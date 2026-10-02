@@ -79,7 +79,7 @@ export default function Einstellungen() {
       </section>
 
       <section className="karte formular">
-        <h2 className="abschnitt-titel">Meine Seite</h2>
+        <h2 className="abschnitt-titel">Start</h2>
         <label className="feld">
           <span>Planung anzeigen für</span>
           <select value={e.planung_wochen} onChange={(ev) => speichern({ planung_wochen: Number(ev.target.value) })}>

@@ -63,6 +63,8 @@ export interface AuftragKurz {
   techniker?: string | null
   wartung_gesamt?: number
   wartung_erledigt?: number
+  rolle?: 'haupt' | 'mit'
+  fortschritt?: number
 }
 
 export interface Aufgabe {
@@ -72,6 +74,9 @@ export interface Aufgabe {
   status: string | null
   auftrag_id: number | null
   auftrag: string | null
+  system_id?: number | null
+  kunde?: string | null
+  system?: string | null
 }
 
 export interface Ausruestung {

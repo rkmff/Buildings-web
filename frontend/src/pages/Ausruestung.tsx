@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import Dialog from '../components/Dialog'
+import Dokumente from '../components/Dokumente'
 import Icon from '../components/Icon'
 import { Protokoll } from '../components/ObjektDialog'
 import { lang } from '../datum'
@@ -21,6 +22,7 @@ interface Eintrag {
   besitzer_id: number
   besitzer: string | null
   uebergabe_an: string | null
+  hauptfoto_id: number | null
 }
 
 interface Detail extends Eintrag {
@@ -50,8 +52,8 @@ interface Detaildaten {
   darf_bearbeiten: boolean
   uebergaben: { id: number; status: string; gestartet_am: string; bestaetigt_am: string | null; notiz: string | null; von_id: number; an_id: number; von: string; an: string }[]
   kalibrierungen: { id: number; datum: string; gueltig_bis: string | null; zertifikat: string | null; ergebnis: string | null; bemerkung: string | null }[]
-  fotos: { id: number; originalname: string | null; beschreibung: string | null; aufnahmedatum: string | null }[]
-  dokumente: { id: number; name: string | null; beschreibung: string | null; hochgeladen_am: string | null }[]
+  fotos: { id: number; originalname: string | null; beschreibung: string | null; aufnahmedatum: string | null; hauptfoto: number }[]
+  dokumente: { id: number }[]
 }
 
 const STATUS_LABEL: Record<string, string> = { aktiv: 'Aktiv', reparatur: 'Reparatur', ausgemustert: 'Ausgemustert' }
@@ -204,6 +206,12 @@ export default function Ausruestung() {
               {g.eintraege.map((e) => (
                 <Link key={e.id} to={`/ausruestung/${e.id}`}
                   className={`personen-zeile${e.id === ausgewaehlt ? ' aktiv' : ''}${e.status === 'ausgemustert' ? ' inaktiv' : ''}`}>
+                  {e.hauptfoto_id ? (
+                    <img className="mini-foto" src={`/api/fotos/${e.hauptfoto_id}/datei`} alt="" loading="lazy"
+                      onError={(ev) => { ev.currentTarget.style.visibility = 'hidden' }} />
+                  ) : (
+                    <span className="mini-foto leer" aria-hidden="true"><Icon name="werkzeug" size={16} /></span>
+                  )}
                   <span className="personen-text">
                     <strong>{e.name}</strong>
                     <small>{[e.hersteller, e.modell].filter(Boolean).join(' ') || e.typ || '–'}</small>
@@ -256,6 +264,7 @@ function AusruestungDetail({ id, stamm, onGeaendert, onMeldung, onZurueck }: {
   const [d, setD] = useState<Detaildaten | null>(null)
   const [fehler, setFehler] = useState('')
   const [tab, setTab] = useState<Tab>('uebergaben')
+  const [dokAnzahl, setDokAnzahl] = useState<number | null>(null)
   const [dialog, setDialog] = useState<'bearbeiten' | 'uebergabe' | 'kalibrierung' | null>(null)
   const fotoEingabe = useRef<HTMLInputElement>(null)
 
@@ -268,6 +277,7 @@ function AusruestungDetail({ id, stamm, onGeaendert, onMeldung, onZurueck }: {
   if (!d) return <p className="gedaempft">Wird geladen …</p>
   const a = d.ausruestung
   const offen = d.uebergaben.find((u) => u.status === 'offen')
+  const haupt = d.fotos.find((f) => f.hauptfoto) ?? null
 
   const neuLaden = () => {
     laden()
@@ -294,7 +304,7 @@ function AusruestungDetail({ id, stamm, onGeaendert, onMeldung, onZurueck }: {
     ['uebergaben', 'Übergaben', d.uebergaben.length],
     ...(a.kalibrierpflichtig || d.kalibrierungen.length ? [['kalibrierungen', 'Kalibrierungen', d.kalibrierungen.length] as [Tab, string, number]] : []),
     ['fotos', 'Fotos', d.fotos.length],
-    ...(d.dokumente.length ? [['dokumente', 'Dokumente', d.dokumente.length] as [Tab, string, number]] : []),
+    ['dokumente', 'Dokumente', dokAnzahl ?? d.dokumente.length],
   ]
   const aktiverTab = tabs.some(([t]) => t === tab) ? tab : 'uebergaben'
 
@@ -318,7 +328,12 @@ function AusruestungDetail({ id, stamm, onGeaendert, onMeldung, onZurueck }: {
         <Icon name="links" size={16} /> Zur Übersicht
       </button>
       <div className="detail-kopf">
-        <div>
+        {haupt && (
+          <a className="hauptfoto" href={`/api/fotos/${haupt.id}/datei`} target="_blank" rel="noreferrer">
+            <img src={`/api/fotos/${haupt.id}/datei`} alt={haupt.beschreibung || a.name} />
+          </a>
+        )}
+        <div className="flex-1">
           <span className="typ-marke gross">{a.typ ?? 'Ausrüstung'}</span>
           <h1 className="seitentitel">{a.name}</h1>
           <p className="zeile">
@@ -425,25 +440,26 @@ function AusruestungDetail({ id, stamm, onGeaendert, onMeldung, onZurueck }: {
             {d.fotos.length === 0 ? <p className="gedaempft">Keine Fotos vorhanden.</p> : (
               <div className="foto-raster">
                 {d.fotos.map((f) => (
-                  <a key={f.id} href={`/api/fotos/${f.id}/datei`} target="_blank" rel="noreferrer" className="foto-kachel">
-                    <img src={`/api/fotos/${f.id}/datei`} alt={f.beschreibung || f.originalname || 'Foto'} loading="lazy" />
+                  <div key={f.id} className={`foto-kachel${f.hauptfoto ? ' haupt' : ''}`}>
+                    <a href={`/api/fotos/${f.id}/datei`} target="_blank" rel="noreferrer">
+                      <img src={`/api/fotos/${f.id}/datei`} alt={f.beschreibung || f.originalname || 'Foto'} loading="lazy" />
+                    </a>
                     <span>{f.beschreibung || lang(f.aufnahmedatum) || f.originalname}</span>
-                  </a>
+                    {f.hauptfoto ? (
+                      <span className="status-pille pille-gut">Hauptfoto</span>
+                    ) : d.darf_bearbeiten && d.fotos.length > 1 ? (
+                      <button type="button" className="knopf klein"
+                        onClick={() => aktion(() => api.post(`/api/ausruestung/${id}/hauptfoto`, { foto_id: f.id }), 'Hauptfoto geändert.')}>
+                        Als Hauptfoto
+                      </button>
+                    ) : null}
+                  </div>
                 ))}
               </div>
             )}
           </>
         )}
-        {aktiverTab === 'dokumente' && (
-          <ul className="liste dokument-liste">
-            {d.dokumente.map((x) => (
-              <li key={x.id} className="liste-eintrag zeile-zwischen">
-                <a href={`/api/dokumente/${x.id}/datei`} target="_blank" rel="noreferrer">{x.name || 'Dokument'}</a>
-                <small className="gedaempft">{x.beschreibung || lang(x.hochgeladen_am)}</small>
-              </li>
-            ))}
-          </ul>
-        )}
+        {aktiverTab === 'dokumente' && <Dokumente art="ausruestung" id={id} onAnzahl={setDokAnzahl} />}
       </div>
       <Protokoll erstelltAm={a.erstellt_am} erstelltVon={a.erstellt_von} geaendertAm={a.geaendert_am} geaendertVon={a.geaendert_von} />
 

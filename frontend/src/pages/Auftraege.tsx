@@ -13,8 +13,10 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNo
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import Dialog from '../components/Dialog'
+import Dokumente from '../components/Dokumente'
 import Icon from '../components/Icon'
-import { kurz } from '../datum'
+import LinkFeld, { linkAusDrop } from '../components/LinkFeld'
+import { kurz, lang } from '../datum'
 import { textAuf } from '../theme'
 
 export interface Auftrag {
@@ -40,6 +42,17 @@ export interface Auftrag {
   wartung_achtung: number
   wartung_schlecht: number
   wartung_status?: 'geplant' | 'gestartet' | 'pausiert' | 'fertig'
+  link_salesforce?: string | null
+  link_dokumente?: string | null
+  fortschritt?: number
+  mitverantwortliche_ids?: number[]
+  mitverantwortliche?: string | null
+  geaendert_am?: string | null
+}
+
+/** Wartungen zeigen den Fortschritt der Wartungsaufgaben, alle anderen den Schieberegler. */
+export function istWartung(a: Auftrag) {
+  return a.typ?.trim().toLowerCase() === 'wartung' || a.wartung_gesamt > 0
 }
 
 interface Stammdaten {
@@ -67,6 +80,12 @@ function initialen(name: string) {
 
 function prozent(a: Auftrag) {
   return a.wartung_gesamt ? Math.round((a.wartung_erledigt / a.wartung_gesamt) * 100) : 0
+}
+
+/** Systembezeichnung: Bei Kunden mit nur einem System reicht der Kundenname. */
+export function systemText(kunde: string | null | undefined, system: string | null | undefined) {
+  if (!system || (kunde && system.trim().toLowerCase() === kunde.trim().toLowerCase())) return kunde ?? system ?? ''
+  return [kunde, system].filter(Boolean).join(' · ')
 }
 
 export default function Auftraege() {
@@ -252,11 +271,11 @@ function Board({ auftraege, stamm, storniert, ausgewaehlt, darf, onStatus }: {
       onDragEnd={onDragEnd}
       onDragCancel={() => setAktiv(null)}
     >
-      <div className="board" style={{ gridTemplateColumns: `repeat(${spalten.length}, minmax(260px, 1fr))` }}>
+      <div className="board" style={{ gridTemplateColumns: spalten.map((s) => (breit(s.name) ? 'minmax(540px, 2fr)' : 'minmax(260px, 1fr)')).join(' ') }}>
         {spalten.map((s) => {
           const karten = auftraege.filter((a) => a.status_id === s.id)
           return (
-            <BoardSpalte key={String(s.id)} statusId={s.id} titel={s.name} anzahl={karten.length}>
+            <BoardSpalte key={String(s.id)} statusId={s.id} titel={s.name} anzahl={karten.length} breit={breit(s.name)}>
               {karten.map((a) => (
                 <AuftragKarte key={a.id} a={a} aktiv={a.id === ausgewaehlt} ziehbar={darf} />
               ))}
@@ -270,10 +289,13 @@ function Board({ auftraege, stamm, storniert, ausgewaehlt, darf, onStatus }: {
   )
 }
 
-function BoardSpalte({ statusId, titel, anzahl, children }: { statusId: number | null; titel: string; anzahl: number; children: ReactNode }) {
+/** „In Arbeit“ ist im Board doppelt so breit. */
+const breit = (name: string) => name.trim().toLowerCase() === 'in arbeit'
+
+function BoardSpalte({ statusId, titel, anzahl, breit, children }: { statusId: number | null; titel: string; anzahl: number; breit?: boolean; children: ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({ id: `s-${statusId}`, data: { statusId } })
   return (
-    <section ref={setNodeRef} className={`board-spalte${isOver ? ' ziel' : ''}`} aria-label={titel}>
+    <section ref={setNodeRef} className={`board-spalte${isOver ? ' ziel' : ''}${breit ? ' breit' : ''}`} aria-label={titel}>
       <div className="board-spalte-kopf">
         <h2>{titel}</h2>
         <span className="mono klein gedaempft">{anzahl}</span>
@@ -301,15 +323,23 @@ function KartenInhalt({ a, schwebend }: { a: Auftrag; schwebend?: boolean }) {
         <strong>{a.name}</strong>
         {a.typ && <span className="typ-pille" style={{ background: a.farbe, color: textAuf(a.farbe) }}>{a.typ}</span>}
       </div>
-      <small className="gedaempft">{[a.kunde, a.system].filter(Boolean).join(' · ')}</small>
-      {a.wartung_gesamt > 0 && (
+      <small className="gedaempft">{systemText(a.kunde, a.system)}</small>
+      {a.wartung_gesamt > 0 ? (
         <div className="fortschritt">
           <div style={{ width: `${prozent(a)}%` }} />
           <span className="mono klein">{a.wartung_erledigt}/{a.wartung_gesamt}</span>
         </div>
+      ) : !istWartung(a) && !!a.fortschritt && (
+        <div className="fortschritt">
+          <div style={{ width: `${a.fortschritt}%` }} />
+          <span className="mono klein">{a.fortschritt} %</span>
+        </div>
       )}
       {a.techniker && (
-        <span className="techniker-zeile"><span className="avatar mini">{initialen(a.techniker)}</span>{a.techniker}</span>
+        <span className="techniker-zeile">
+          <span className="avatar mini">{initialen(a.techniker)}</span>{a.techniker}
+          {a.mitverantwortliche && <span className="gedaempft klein" title={`Mitverantwortlich: ${a.mitverantwortliche}`}>+{a.mitverantwortliche_ids?.length}</span>}
+        </span>
       )}
     </div>
   )
@@ -317,13 +347,17 @@ function KartenInhalt({ a, schwebend }: { a: Auftrag; schwebend?: boolean }) {
 
 /* ---------- Liste ---------- */
 
-type Sortierung = { spalte: keyof Auftrag | 'fortschritt'; auf: boolean }
+type Sortierung = { spalte: keyof Auftrag | 'fortschritt_anzeige'; auf: boolean }
+
+function fortschrittWert(a: Auftrag) {
+  return a.wartung_gesamt ? prozent(a) : istWartung(a) ? -1 : a.fortschritt ?? 0
+}
 
 function Liste({ auftraege, ausgewaehlt }: { auftraege: Auftrag[]; ausgewaehlt: number | null }) {
-  const [sort, setSort] = useState<Sortierung>({ spalte: 'name', auf: true })
+  const [sort, setSort] = useState<Sortierung>({ spalte: 'geaendert_am', auf: false })
   const navigate = useNavigate()
   const sortiert = useMemo(() => {
-    const wert = (a: Auftrag) => (sort.spalte === 'fortschritt' ? (a.wartung_gesamt ? prozent(a) : -1) : a[sort.spalte] ?? '')
+    const wert = (a: Auftrag) => (sort.spalte === 'fortschritt_anzeige' ? fortschrittWert(a) : a[sort.spalte] ?? '')
     return [...auftraege].sort((x, y) => {
       const a = wert(x)
       const b = wert(y)
@@ -353,7 +387,8 @@ function Liste({ auftraege, ausgewaehlt }: { auftraege: Auftrag[]; ausgewaehlt: 
               {kopf('Typ', 'typ')}
               {kopf('Status', 'status')}
               {kopf('Verantwortlich', 'techniker')}
-              {kopf('Wartung', 'fortschritt')}
+              {kopf('Fortschritt', 'fortschritt_anzeige')}
+              {kopf('Geändert', 'geaendert_am')}
             </tr>
           </thead>
           <tbody>
@@ -364,8 +399,9 @@ function Liste({ auftraege, ausgewaehlt }: { auftraege: Auftrag[]; ausgewaehlt: 
                 <td>{a.system}</td>
                 <td><span className="zeile"><span className="farbpunkt" style={{ background: a.farbe }} />{a.typ}</span></td>
                 <td>{a.status || <span className="gedaempft">ohne</span>}</td>
-                <td>{a.techniker}</td>
-                <td className="mono">{a.wartung_gesamt ? `${a.wartung_erledigt}/${a.wartung_gesamt}` : ''}</td>
+                <td>{a.techniker}{a.mitverantwortliche && <small className="gedaempft block">+ {a.mitverantwortliche}</small>}</td>
+                <td className="mono">{a.wartung_gesamt ? `${a.wartung_erledigt}/${a.wartung_gesamt}` : istWartung(a) ? '' : `${a.fortschritt ?? 0} %`}</td>
+                <td className="mono klein nowrap">{lang(a.geaendert_am?.slice(0, 10))}</td>
               </tr>
             ))}
           </tbody>
@@ -433,8 +469,22 @@ function AuftragDetail({ id, stamm, onClose, onBearbeiten, onGeaendert, onFehler
   onFehler: (m: string) => void
 }) {
   const [d, setD] = useState<Detaildaten | null>(null)
-  const [tab, setTab] = useState<'details' | 'aufgaben' | 'planung' | 'kontakte'>('details')
+  const [tab, setTab] = useState<'details' | 'aufgaben' | 'dokumente' | 'planung' | 'kontakte'>('details')
   const [neueAufgabe, setNeueAufgabe] = useState('')
+  const [dokumente, setDokumente] = useState<number | null>(null)
+  const [regler, setRegler] = useState<number | null>(null)
+
+  async function felder(werte: Record<string, unknown>) {
+    try {
+      const r = await api.patch<{ auftrag: Auftrag }>(`/api/auftraege/${id}/felder`, werte)
+      setD((alt) => (alt ? { ...alt, auftrag: r.auftrag } : alt))
+      await onGeaendert()
+      return true
+    } catch (err) {
+      onFehler((err as Error).message)
+      return false
+    }
+  }
 
   const laden = useCallback(async () => {
     try {
@@ -490,9 +540,22 @@ function AuftragDetail({ id, stamm, onClose, onBearbeiten, onGeaendert, onFehler
           </div>
           <h2 className="detail-titel">{d.auftrag.name}</h2>
           {d.auftrag.system_id && (
-            <Link to={`/objekte/system/${d.auftrag.system_id}`} className="klein">{[d.auftrag.kunde, d.auftrag.system].filter(Boolean).join(' › ')}</Link>
+            <Link to={`/objekte/system/${d.auftrag.system_id}`} className="klein">{systemText(d.auftrag.kunde, d.auftrag.system)}</Link>
           )}
           {d.auftrag.wartung_gesamt > 0 && <Befunde a={d.auftrag} />}
+          {!istWartung(d.auftrag) && (
+            <label className="fortschritt-regler">
+              <span className="zeile-zwischen">
+                <span className="klein">Fortschritt</span>
+                <strong className="mono">{regler ?? d.auftrag.fortschritt ?? 0} %</strong>
+              </span>
+              <input type="range" min={0} max={100} step={5} value={regler ?? d.auftrag.fortschritt ?? 0}
+                aria-label="Fortschritt in Prozent"
+                onChange={(e) => setRegler(Number(e.target.value))}
+                onPointerUp={() => { if (regler !== null) felder({ fortschritt: regler }).then(() => setRegler(null)) }}
+                onKeyUp={() => { if (regler !== null) felder({ fortschritt: regler }).then(() => setRegler(null)) }} />
+            </label>
+          )}
           <div className="knopf-reihe links">
             {(d.auftrag.typ?.toLowerCase() === 'wartung' || d.auftrag.wartung_gesamt > 0) && (
               <Link to={`/wartung/${d.auftrag.id}`} className="knopf primaer">Wartung ausführen</Link>
@@ -510,6 +573,7 @@ function AuftragDetail({ id, stamm, onClose, onBearbeiten, onGeaendert, onFehler
             {([
               ['details', 'Details', null],
               ['aufgaben', 'Aufgaben', d.aufgaben.length],
+              ['dokumente', 'Dokumente', dokumente],
               ['planung', 'Planung', d.planung.length],
               ['kontakte', 'Kontakte', d.ansprechpartner.length],
             ] as const).map(([k, label, n]) => (
@@ -520,13 +584,22 @@ function AuftragDetail({ id, stamm, onClose, onBearbeiten, onGeaendert, onFehler
           </div>
 
           {tab === 'details' && (
+            <>
             <dl className="detail-liste">
               <dt>Verantwortlich</dt><dd>{d.auftrag.techniker || '–'}</dd>
+              <dt>Mitverantwortlich</dt><dd>{d.auftrag.mitverantwortliche || '–'}</dd>
               <dt>Plan</dt><dd>{[d.auftrag.plan_tage ? `${d.auftrag.plan_tage} Tage` : '', d.auftrag.plan_stunden ? `${d.auftrag.plan_stunden} Stunden` : ''].filter(Boolean).join(' · ') || '–'}</dd>
               <dt>Eingeplant</dt><dd>{[...new Set(d.planung.map((p) => p.mitarbeiter))].join(', ') || '–'}</dd>
               <dt>Beschreibung</dt><dd className="mehrzeilig">{d.auftrag.beschreibung || '–'}</dd>
             </dl>
+            <div className="link-felder">
+              <LinkFeld label="Salesforce" wert={d.auftrag.link_salesforce ?? null} darf onSpeichern={(l) => felder({ link_salesforce: l })} />
+              <LinkFeld label="Dokumentordner" wert={d.auftrag.link_dokumente ?? null} darf onSpeichern={(l) => felder({ link_dokumente: l })} />
+            </div>
+            </>
           )}
+
+          {tab === 'dokumente' && <Dokumente art="auftrag" id={d.auftrag.id} onAnzahl={setDokumente} />}
 
           {tab === 'aufgaben' && (
             <div className="stapel">
@@ -539,7 +612,7 @@ function AuftragDetail({ id, stamm, onClose, onBearbeiten, onGeaendert, onFehler
                 {d.aufgaben.map((t) => (
                   <li key={t.id} className="liste-eintrag zeile-zwischen">
                     <span>
-                      <span className={t.status === 'erledigt' ? 'durchgestrichen' : ''}>{t.titel}</span>
+                      <Link to={`/aufgaben/${t.id}`} className={t.status === 'erledigt' ? 'durchgestrichen' : ''}>{t.titel}</Link>
                       {t.mitarbeiter && <small className="gedaempft block">{t.mitarbeiter}</small>}
                     </span>
                     <select aria-label={`Status von ${t.titel}`} value={t.status} onChange={(e) => aufgabeStatus(t.id, e.target.value)}>
@@ -603,9 +676,16 @@ function AuftragFormular({ auftrag, stamm, onClose, onGespeichert }: {
     plan_stunden: auftrag?.plan_stunden ?? '',
     beschreibung: auftrag?.beschreibung ?? '',
     farbe: auftrag?.farbe ?? '',
+    link_salesforce: auftrag?.link_salesforce ?? '',
+    link_dokumente: auftrag?.link_dokumente ?? '',
   })
+  const [mit, setMit] = useState<Set<number>>(new Set(auftrag?.mitverantwortliche_ids ?? []))
   const [fehler, setFehler] = useState('')
   const setze = (k: keyof typeof werte, v: string | number) => setWerte((w) => ({ ...w, [k]: v }))
+  const linkFallen = (k: 'link_salesforce' | 'link_dokumente') => (e: React.DragEvent) => {
+    const link = linkAusDrop(e)
+    if (link) { e.preventDefault(); setze(k, link) }
+  }
 
   async function speichern() {
     setFehler('')
@@ -618,6 +698,7 @@ function AuftragFormular({ auftrag, stamm, onClose, onGespeichert }: {
       plan_tage: werte.plan_tage === '' ? null : Number(werte.plan_tage),
       plan_stunden: werte.plan_stunden === '' ? null : Number(werte.plan_stunden),
       farbe: werte.farbe || null,
+      mitverantwortliche_ids: [...mit].filter((m) => m !== werte.techniker_id),
     }
     try {
       const r = auftrag
@@ -649,7 +730,7 @@ function AuftragFormular({ auftrag, stamm, onClose, onGespeichert }: {
         <span>Kundensystem</span>
         <select value={werte.system_id} onChange={(e) => setze('system_id', Number(e.target.value))}>
           <option value={0}>Bitte wählen …</option>
-          {stamm.systeme.map((s) => <option key={s.id} value={s.id}>{[s.kunde, s.name].filter(Boolean).join(' · ')}</option>)}
+          {stamm.systeme.map((s) => <option key={s.id} value={s.id}>{systemText(s.kunde, s.name)}</option>)}
         </select>
       </label>
       <div className="feld-reihe">
@@ -667,12 +748,34 @@ function AuftragFormular({ auftrag, stamm, onClose, onGespeichert }: {
         </label>
       </div>
       <label className="feld">
-        <span>Verantwortlicher Techniker</span>
+        <span>Hauptverantwortlich</span>
         <select value={werte.techniker_id} onChange={(e) => setze('techniker_id', Number(e.target.value))}>
           <option value={0}>Niemand</option>
           {stamm.techniker.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
       </label>
+      <fieldset className="feld mehrfach-wahl">
+        <legend>Mitverantwortlich</legend>
+        <div className="mehrfach-liste">
+          {stamm.techniker.filter((t) => t.id !== werte.techniker_id).map((t) => (
+            <label key={t.id} className="schalter klein">
+              <input type="checkbox" checked={mit.has(t.id)}
+                onChange={(e) => setMit((m) => { const n = new Set(m); if (e.target.checked) n.add(t.id); else n.delete(t.id); return n })} />
+              {t.name}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <div className="feld-reihe">
+        <label className="feld" onDrop={linkFallen('link_salesforce')} onDragOver={(e) => e.preventDefault()}>
+          <span>Salesforce-Link</span>
+          <input type="url" placeholder="Link hierher ziehen oder einfügen" value={werte.link_salesforce} onChange={(e) => setze('link_salesforce', e.target.value)} />
+        </label>
+        <label className="feld" onDrop={linkFallen('link_dokumente')} onDragOver={(e) => e.preventDefault()}>
+          <span>Dokumentordner</span>
+          <input type="url" placeholder="Link hierher ziehen oder einfügen" value={werte.link_dokumente} onChange={(e) => setze('link_dokumente', e.target.value)} />
+        </label>
+      </div>
       <div className="feld-reihe">
         <label className="feld">
           <span>Geplante Tage</span>

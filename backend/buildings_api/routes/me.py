@@ -5,6 +5,7 @@ from flask import Blueprint, abort, g, request
 
 from ..auth import login_required
 from ..db import get_db, rows
+from .auftraege import _bezug
 
 bp = Blueprint("me", __name__)
 
@@ -84,6 +85,8 @@ def meine_auftraege(db, tcid: int) -> list[dict]:
         db.execute(
             f"""
             SELECT a.ATID AS id, a.ATName AS name, st.SAName AS status, ta.TAName AS typ,
+                   CASE WHEN a.ATVerantwortlicherTechniker=:tc THEN 'haupt' ELSE 'mit' END AS rolle,
+                   COALESCE(a.ATFortschritt, 0) AS fortschritt,
                    s.KSID AS system_id, s.KSKunde AS kunde, s.KSName AS system,
                    COALESCE(NULLIF(a.ATFarbe,''), ta.TAPlanungsfarbe, '#16a34a') AS farbe,
                    (SELECT COUNT(*) FROM wartungsaufgaben w WHERE w.auftrag_id=a.ATID) AS wartung_gesamt,
@@ -93,10 +96,11 @@ def meine_auftraege(db, tcid: int) -> list[dict]:
             LEFT JOIN "tbKundenSysteme" s ON s.KSID=a.ATKS
             LEFT JOIN "tblStatusAufträge" st ON st.SAID=a.ATStatus
             LEFT JOIN "tblTypenAufträge" ta ON ta.TAID=a.ATTyp
-            WHERE a.ATVerantwortlicherTechniker=? AND {AKTIVER_STATUS_SQL}
+            WHERE (a.ATVerantwortlicherTechniker=:tc OR EXISTS (SELECT 1 FROM auftrag_mitverantwortliche mv
+                   WHERE mv.auftrag_id=a.ATID AND mv.mitarbeiter_id=:tc)) AND {AKTIVER_STATUS_SQL}
             ORDER BY COALESCE(a.web_geaendert_am, a.web_erstellt_am) DESC
             """,
-            (tcid,),
+            {"tc": tcid},
         )
     )
 
@@ -110,11 +114,13 @@ def uebersicht():
         db.execute(
             """
             SELECT t.auftragsaufgabe_id AS id, t.titel, t.beschreibung, t.status,
-                   a.ATID AS auftrag_id, a.ATName AS auftrag
+                   a.ATID AS auftrag_id, a.ATName AS auftrag,
+                   s.KSID AS system_id, s.KSKunde AS kunde, s.KSName AS system
             FROM auftragsaufgaben t
             LEFT JOIN "tblAufTräge" a ON a.ATID=t.auftrag_id
+            LEFT JOIN "tbKundenSysteme" s ON s.KSID=COALESCE(t.kunden_system_id, a.ATKS)
             WHERE t.mitarbeiter_id=? AND LOWER(TRIM(COALESCE(t.status,'')))<>'erledigt'
-            ORDER BY t.auftragsaufgabe_id DESC
+            ORDER BY COALESCE(t.web_geaendert_am, t.web_erstellt_am) DESC, t.auftragsaufgabe_id DESC
             """,
             (tcid,),
         )
@@ -161,15 +167,13 @@ def aufgabe_anlegen():
     titel = str(data.get("titel") or "").strip()
     if not titel:
         return {"ok": False, "message": "Bitte einen Titel eingeben."}, 400
-    auftrag_id = data.get("auftrag_id") or None
     db = get_db()
-    if auftrag_id is None:
-        return {"ok": False, "message": "Bitte einen Auftrag wählen."}, 400
-    if not db.execute('SELECT 1 FROM "tblAufTräge" WHERE ATID=?', (auftrag_id,)).fetchone():
-        return {"ok": False, "message": "Der Auftrag wurde nicht gefunden."}, 404
+    # Auftrag und Kundensystem sind beide freiwillig
+    auftrag_id, system_id = _bezug(db, data)
     cur = db.execute(
-        "INSERT INTO auftragsaufgaben (auftrag_id, titel, beschreibung, mitarbeiter_id, status) VALUES (?, ?, ?, ?, 'offen')",
-        (auftrag_id, titel[:200], str(data.get("beschreibung") or "").strip() or None, g.user["TCID"]),
+        """INSERT INTO auftragsaufgaben (auftrag_id, kunden_system_id, titel, beschreibung, mitarbeiter_id, status)
+           VALUES (?, ?, ?, ?, ?, 'offen')""",
+        (auftrag_id, system_id, titel[:200], str(data.get("beschreibung") or "").strip() or None, g.user["TCID"]),
     )
     db.commit()
     return {"ok": True, "id": cur.lastrowid}

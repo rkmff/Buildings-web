@@ -321,3 +321,40 @@ def system_entfernen(tsid: int):
         abort(404)
     db.commit()
     return {"ok": True}
+
+
+@bp.post("/systeme/<int:system_id>/techniker")
+@login_required
+def system_techniker_zuordnen(system_id: int):
+    """Techniker einem Kundensystem zuordnen (primär oder sekundär)."""
+    _voll()
+    data = request.get_json(silent=True) or {}
+    db = get_db()
+    if not db.execute('SELECT 1 FROM "tbKundenSysteme" WHERE KSID=?', (system_id,)).fetchone():
+        abort(404)
+    tcid = data.get("mitarbeiter_id")
+    _mitarbeiter(db, tcid)
+    vorhanden = db.execute("SELECT TSID FROM tblMitarbeiterSysteme WHERE TSTechniker=? AND TSSystem=?",
+                           (tcid, system_id)).fetchone()
+    primaer = 1 if data.get("primaer") else 0
+    if vorhanden:
+        db.execute("UPDATE tblMitarbeiterSysteme SET TSPrimary=? WHERE TSID=?", (primaer, vorhanden[0]))
+        tsid = vorhanden[0]
+    else:
+        tsid = db.execute("INSERT INTO tblMitarbeiterSysteme (TSSystem, TSTechniker, TSPrimary) VALUES (?, ?, ?)",
+                          (system_id, tcid, primaer)).lastrowid
+    db.commit()
+    return {"ok": True, "id": tsid}
+
+
+@bp.patch("/mitarbeiter-systeme/<int:tsid>")
+@login_required
+def system_zuordnung_aendern(tsid: int):
+    _voll()
+    data = request.get_json(silent=True) or {}
+    db = get_db()
+    if db.execute("UPDATE tblMitarbeiterSysteme SET TSPrimary=? WHERE TSID=?",
+                  (1 if data.get("primaer") else 0, tsid)).rowcount == 0:
+        abort(404)
+    db.commit()
+    return {"ok": True}

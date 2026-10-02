@@ -222,7 +222,7 @@ def auftraege_suche():
                 WHERE {AKTIVER_STATUS_SQL}
                   AND (? = '' OR a.ATName LIKE ? OR s.KSKunde LIKE ? OR s.KSName LIKE ?
                        OR (m.TCVorname || ' ' || m.TCNachname) LIKE ?)
-                ORDER BY s.KSKunde COLLATE NOCASE, a.ATName COLLATE NOCASE
+                ORDER BY COALESCE(a.web_geaendert_am, a.web_erstellt_am) DESC, a.ATID DESC
                 LIMIT 100
                 """,
                 (q, like, like, like, like),

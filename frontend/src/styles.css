@@ -709,3 +709,62 @@ a.status-pille.verwendung:hover { background: var(--accent-soft); color: var(--a
 .wartung-aufgabe-name .status-pille { margin-left: 8px; }
 .neutral-zeile { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .neutral-zeile .ergebnis-knopf { min-width: 120px; flex: 0 0 auto; }
+
+/* ---------- Notizen: Dokumente, Links, Fortschritt, Aufgaben, Hauptfoto ---------- */
+.dokumente { display: flex; flex-direction: column; gap: 10px; padding: 14px 18px; border: 2px dashed transparent; border-radius: var(--radius); transition: border-color 0.1s, background 0.1s; }
+.dokumente.ueber { border-color: var(--accent); background: var(--accent-soft); }
+.ablage { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 64px; padding: 12px; border: 1.5px dashed var(--line-2); border-radius: var(--radius-s); background: var(--surface-2); color: var(--text-2); font: inherit; font-size: 13px; cursor: pointer; }
+.ablage:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-text); }
+.ablage:disabled { cursor: progress; opacity: 0.7; }
+.dokumente .dokument-liste { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.dokumente .dokument-liste li { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--surface-3); }
+.dokumente .dokument-liste li:last-child { border-bottom: 0; }
+.dokumente .dokument-liste a { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; }
+.dokumente .dokument-liste a:hover strong { color: var(--accent-text); text-decoration: underline; }
+.dokumente .dokument-liste strong { font-weight: 500; overflow-wrap: anywhere; }
+.datei-typ { flex-shrink: 0; width: 42px; height: 42px; display: grid; place-items: center; border-radius: 8px; background: var(--surface-3); color: var(--text-2); font-size: 10.5px; font-weight: 700; }
+
+.link-felder { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 4px 0; }
+.link-feld { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 8px 12px; border: 1.5px dashed var(--line); border-radius: var(--radius-s); background: var(--surface); transition: border-color 0.1s, background 0.1s; }
+.link-feld.ueber { border-color: var(--accent); background: var(--accent-soft); }
+.link-feld-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-2); }
+.link-feld .zeile { min-width: 0; flex-wrap: wrap; }
+.link-feld input { flex: 1; min-width: 120px; }
+.link-feld-wert { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+
+.fortschritt-regler { display: flex; flex-direction: column; gap: 4px; max-width: 420px; margin: 6px 0; }
+.fortschritt-regler input[type='range'] { width: 100%; accent-color: var(--accent); }
+.board-spalte.breit .board-karten { display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
+
+.mehrfach-liste { display: flex; flex-wrap: wrap; gap: 6px 14px; max-height: 160px; overflow-y: auto; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--surface); }
+.mehrfach-liste .schalter { min-height: 0; padding: 2px 0; border: 0; background: transparent; gap: 6px; font-size: 13px; }
+
+.aufgabe-neu { display: flex; flex-direction: column; gap: 8px; padding: 10px 0; }
+.aufgabe-neu input, .aufgabe-neu select { width: 100%; }
+.liste-eintrag.aufgabe { cursor: default; }
+.liste-eintrag.aufgabe input { cursor: pointer; }
+.liste-eintrag.aufgabe a { color: var(--text); text-decoration: none; }
+.liste-eintrag.aufgabe a:hover { color: var(--accent-text); text-decoration: underline; }
+.aufgabe-seite { max-width: 900px; }
+.aufgabe.gross { align-items: center; cursor: default; }
+.aufgabe.gross input { width: 24px; height: 24px; margin: 0; cursor: pointer; }
+.aufgabe-formular { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+
+.system-techniker { padding: 14px 18px; display: flex; flex-direction: column; gap: 14px; }
+.system-techniker .zeile-zwischen { flex-wrap: wrap; gap: 8px; }
+.techniker-liste { list-style: none; margin: 4px 0 0; padding: 0; }
+.techniker-liste li { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--surface-3); flex-wrap: wrap; }
+.techniker-liste li:last-child { border-bottom: 0; }
+
+.mini-foto { width: 36px; height: 36px; flex-shrink: 0; border-radius: 6px; object-fit: cover; border: 1px solid var(--line); background: var(--surface-3); }
+.mini-foto.leer { display: grid; place-items: center; color: var(--text-2); }
+.hauptfoto img { width: 132px; height: 99px; object-fit: cover; border-radius: var(--radius-s); border: 1px solid var(--line); display: block; }
+.foto-kachel a { display: block; }
+.foto-kachel.haupt img { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.foto-kachel .knopf, .foto-kachel .status-pille { align-self: flex-start; }
+
+@media (max-width: 900px) {
+  .link-felder { grid-template-columns: 1fr; }
+  .board-spalte.breit .board-karten { grid-template-columns: 1fr; }
+  .hauptfoto img { width: 88px; height: 66px; }
+}

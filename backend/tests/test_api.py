@@ -137,9 +137,13 @@ def test_auftraege_liste_detail_status(client):
 def test_auftrag_anlegen_bearbeiten(client):
     login(client, "RKO")
     stamm = client.get("/api/auftraege/stammdaten").json
-    neu = {"name": "Testauftrag", "system_id": stamm["systeme"][0]["id"], "typ_id": stamm["typen"][0]["id"], "status_id": 1}
+    assert "angeboten" not in [x["name"] for x in stamm["status"]]
+    status = {x["name"]: x["id"] for x in stamm["status"]}
+    neu = {"name": "Testauftrag", "system_id": stamm["systeme"][0]["id"], "typ_id": stamm["typen"][0]["id"],
+           "status_id": status["beauftragt"]}
     a = client.post("/api/auftraege", json=neu).json["auftrag"]
-    assert a["name"] == "Testauftrag" and a["status"] == "angeboten"
+    assert a["name"] == "Testauftrag" and a["status"] == "beauftragt"
+    assert client.post("/api/auftraege", json={**neu, "status_id": 999}).status_code == 400
     a = client.put(f"/api/auftraege/{a['id']}", json={**neu, "name": "Umbenannt", "plan_tage": 3}).json["auftrag"]
     assert (a["name"], a["plan_tage"]) == ("Umbenannt", 3)
     assert client.post("/api/auftraege", json={"name": ""}).status_code == 400
@@ -555,3 +559,67 @@ def test_wartung_ablauf(client):
     det = client.get(f"/api/wartung/{atid}").json
     assert det["auftrag"]["status"] == "erledigt"
     assert client.post(f"/api/wartung/{atid}/aufgaben-aktualisieren", json={}).status_code == 409
+
+
+def test_notizen_auftraege(client):
+    login(client, "RKO")
+    stamm = client.get("/api/auftraege/stammdaten").json
+    status = {x["name"]: x["id"] for x in stamm["status"]}
+    frf = next(t["id"] for t in stamm["techniker"] if "Feuerstein" in t["name"])
+    rko = next(t["id"] for t in stamm["techniker"] if "Köster" in t["name"])
+    typ = next(t["id"] for t in stamm["typen"] if t["name"].lower() != "wartung")
+    a = client.post("/api/auftraege", json={
+        "name": "Notiztest", "system_id": stamm["systeme"][0]["id"], "typ_id": typ, "status_id": status["beauftragt"],
+        "techniker_id": rko, "mitverantwortliche_ids": [frf, rko],
+        "link_salesforce": "https://example.org/sf/1", "link_dokumente": "\\\\server\\ordner",
+    }).json["auftrag"]
+    assert a["mitverantwortliche_ids"] == [frf] and a["link_salesforce"].startswith("https://")
+    assert client.post("/api/auftraege", json={"name": "x", "system_id": stamm["systeme"][0]["id"],
+                                               "link_salesforce": "javascript:alert(1)"}).status_code == 400
+    # in Arbeit setzt 10 %
+    a = client.patch(f"/api/auftraege/{a['id']}/status", json={"status_id": status["in Arbeit"]}).json["auftrag"]
+    assert a["fortschritt"] == 10
+    # Mitverantwortlicher sieht den Auftrag auf seiner Seite und darf den Fortschritt setzen
+    client.post("/api/auth/logout")
+    login(client, "FRF")
+    assert any(x["id"] == a["id"] and x["rolle"] == "mit" for x in client.get("/api/me/uebersicht").json["auftraege"])
+    assert any(x["id"] == a["id"] for x in client.get("/api/auftraege?nur_meine=1").json["auftraege"])
+    r = client.patch(f"/api/auftraege/{a['id']}/felder", json={"fortschritt": 140})
+    assert r.status_code == 200 and r.json["auftrag"]["fortschritt"] == 100
+    # Aufgabe ohne Auftrag, nur mit Kundensystem
+    sid = stamm["systeme"][0]["id"]
+    r = client.post("/api/me/aufgaben", json={"titel": "Ohne Auftrag", "system_id": sid})
+    assert r.status_code == 200
+    t = client.get(f"/api/aufgaben/{r.json['id']}").json["aufgabe"]
+    assert t["auftrag_id"] is None and t["system_id"] == sid
+    assert client.post("/api/me/aufgaben", json={"titel": "Ganz frei"}).status_code == 200
+    # Dokument an der Aufgabe
+    import io
+    r = client.post(f"/api/dokumente/aufgabe/{t['id']}", data={"dateien": (io.BytesIO(b"%PDF-1.4 test"), "Plan.pdf")},
+                    content_type="multipart/form-data")
+    assert r.status_code == 200 and r.json["dokumente"][0]["name"] == "Plan.pdf"
+    did = r.json["dokumente"][0]["id"]
+    assert client.get(f"/api/dokumente/{did}/datei").data.startswith(b"%PDF")
+    assert client.delete(f"/api/dokumente/{did}").status_code == 200
+    assert client.get(f"/api/dokumente/aufgabe/{t['id']}").json["dokumente"] == []
+    assert client.get("/api/dokumente/unbekannt/1").status_code == 404
+
+
+def test_system_techniker(client):
+    login(client, "RKO")
+    stamm = client.get("/api/auftraege/stammdaten").json
+    sid = stamm["systeme"][0]["id"]
+    frf = next(t["id"] for t in stamm["techniker"] if "Feuerstein" in t["name"])
+    assert client.post(f"/api/systeme/{sid}/techniker", json={"mitarbeiter_id": frf, "primaer": False}).status_code == 200
+    m = next(x for x in client.get(f"/api/systeme/{sid}").json["mitarbeiter"] if x["id"] == frf)
+    assert m["primaer"] == 0
+    assert client.patch(f"/api/mitarbeiter-systeme/{m['zuordnung_id']}", json={"primaer": True}).status_code == 200
+    assert next(x for x in client.get(f"/api/systeme/{sid}").json["mitarbeiter"] if x["id"] == frf)["primaer"] == 1
+    # Techniker dürfen die Zuordnung nicht ändern
+    client.post("/api/auth/logout")
+    login(client, "FRF")
+    assert client.delete(f"/api/mitarbeiter-systeme/{m['zuordnung_id']}").status_code == 403
+    client.post("/api/auth/logout")
+    login(client, "RKO")
+    assert client.delete(f"/api/mitarbeiter-systeme/{m['zuordnung_id']}").status_code == 200
+    assert all(x["id"] != frf for x in client.get(f"/api/systeme/{sid}").json["mitarbeiter"])

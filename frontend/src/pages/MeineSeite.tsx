@@ -19,6 +19,7 @@ import Icon from '../components/Icon'
 import Planungskalender, { type DragDaten } from '../components/Planungskalender'
 import { EintragDialog, kollision, ManuellDialog, ZiehVorschau } from '../components/PlanungWerkzeuge'
 import { addDays, heute, lang, langesHeute, montag } from '../datum'
+import { systemText } from './Auftraege'
 import type {
   Abwesenheitsart,
   Aufgabe,
@@ -228,14 +229,22 @@ export default function MeineSeite() {
               return (
                 <li key={a.id} className="liste-eintrag gestapelt">
                   <div className="zeile-zwischen">
-                    <strong>{a.name}</strong>
-                    <span className="status-pille">{a.status || 'ohne Status'}</span>
+                    <Link to={`/auftraege/${a.id}`}><strong>{a.name}</strong></Link>
+                    <span className="zeile">
+                      {a.rolle === 'mit' && <span className="status-pille" title="Du bist mitverantwortlich">mit</span>}
+                      <span className="status-pille">{a.status || 'ohne Status'}</span>
+                    </span>
                   </div>
-                  <small className="gedaempft">{[a.typ, a.kunde, a.system].filter(Boolean).join(' · ')}</small>
-                  {prozent !== null && (
+                  <small className="gedaempft">{[a.typ, systemText(a.kunde, a.system)].filter(Boolean).join(' · ')}</small>
+                  {prozent !== null ? (
                     <div className="fortschritt" aria-label={`Wartung ${prozent} Prozent erledigt`}>
                       <div style={{ width: `${prozent}%` }} />
                       <span className="mono klein">{a.wartung_erledigt}/{a.wartung_gesamt}</span>
+                    </div>
+                  ) : a.typ?.toLowerCase() !== 'wartung' && !!a.fortschritt && (
+                    <div className="fortschritt" aria-label={`${a.fortschritt} Prozent erledigt`}>
+                      <div style={{ width: `${a.fortschritt}%` }} />
+                      <span className="mono klein">{a.fortschritt} %</span>
                     </div>
                   )}
                 </li>
@@ -352,17 +361,22 @@ function AufgabenKarte({ aufgaben, auftraege, onErledigt, onNeu, onFehler }: {
 }) {
   const [neu, setNeu] = useState<string | null>(null)
   const [auftragId, setAuftragId] = useState(0)
+  const [systemId, setSystemId] = useState(0)
+  const [systeme, setSysteme] = useState<{ id: number; kunde: string | null; name: string }[]>([])
+
+  useEffect(() => {
+    if (neu === null || systeme.length) return
+    api.get<{ systeme: typeof systeme }>('/api/auftraege/stammdaten').then((r) => setSysteme(r.systeme)).catch(() => {})
+  }, [neu, systeme.length])
 
   async function anlegen(e: FormEvent) {
     e.preventDefault()
     if (!neu?.trim()) return
-    if (!auftragId) {
-      onFehler('Bitte einen Auftrag für die Aufgabe wählen.')
-      return
-    }
     try {
-      await api.post('/api/me/aufgaben', { titel: neu.trim(), auftrag_id: auftragId })
+      await api.post('/api/me/aufgaben', { titel: neu.trim(), auftrag_id: auftragId || null, system_id: auftragId ? null : systemId || null })
       setNeu(null)
+      setAuftragId(0)
+      setSystemId(0)
       await onNeu()
     } catch (err) {
       onFehler((err as Error).message)
@@ -372,33 +386,41 @@ function AufgabenKarte({ aufgaben, auftraege, onErledigt, onNeu, onFehler }: {
   return (
     <section className="karte">
       <div className="karte-kopf">
-        <h2 className="abschnitt-titel">Offene Aufgaben <span className="zaehler">{aufgaben.length}</span></h2>
+        <h2 className="abschnitt-titel">Meine Aufgaben <span className="zaehler">{aufgaben.length}</span></h2>
         <button type="button" className="icon-knopf rund akzent" aria-label="Aufgabe hinzufügen" onClick={() => setNeu('')}>
           <Icon name="plus" />
         </button>
       </div>
       {neu !== null && (
-        <form className="inline-formular" onSubmit={anlegen}>
+        <form className="aufgabe-neu" onSubmit={anlegen}>
           <input autoFocus aria-label="Titel der neuen Aufgabe" placeholder="Was ist zu tun?" value={neu} onChange={(e) => setNeu(e.target.value)} />
           <select aria-label="Auftrag" value={auftragId} onChange={(e) => setAuftragId(Number(e.target.value))}>
-            <option value={0}>Auftrag wählen …</option>
+            <option value={0}>ohne Auftrag</option>
             {auftraege.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
-          <button type="submit" className="knopf primaer">Anlegen</button>
-          <button type="button" className="knopf" onClick={() => setNeu(null)}>Abbrechen</button>
+          {!auftragId && (
+            <select aria-label="Kundensystem" value={systemId} onChange={(e) => setSystemId(Number(e.target.value))}>
+              <option value={0}>ohne Kundensystem</option>
+              {systeme.map((s) => <option key={s.id} value={s.id}>{systemText(s.kunde, s.name)}</option>)}
+            </select>
+          )}
+          <div className="knopf-reihe links">
+            <button type="submit" className="knopf primaer" disabled={!neu.trim()}>Anlegen</button>
+            <button type="button" className="knopf" onClick={() => setNeu(null)}>Abbrechen</button>
+          </div>
         </form>
       )}
       {aufgaben.length === 0 && neu === null && <p className="gedaempft">Keine offenen Aufgaben.</p>}
       <ul className="liste">
         {aufgaben.map((a) => (
-          <li key={a.id} className="liste-eintrag">
-            <label className="aufgabe">
-              <input type="checkbox" onChange={() => onErledigt(a)} />
-              <span>
-                {a.titel}
-                {a.auftrag && <small className="gedaempft block">{a.auftrag}</small>}
-              </span>
-            </label>
+          <li key={a.id} className="liste-eintrag aufgabe">
+            <input type="checkbox" aria-label={`„${a.titel}“ erledigt`} onChange={() => onErledigt(a)} />
+            <span>
+              <Link to={`/aufgaben/${a.id}`}>{a.titel}</Link>
+              {(a.auftrag || a.system_id) && (
+                <small className="gedaempft block">{a.auftrag ?? systemText(a.kunde, a.system)}</small>
+              )}
+            </span>
           </li>
         ))}
       </ul>
