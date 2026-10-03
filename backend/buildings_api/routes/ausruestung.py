@@ -6,10 +6,11 @@ den Besitzer auch direkt setzen.
 """
 from datetime import date, datetime, timedelta
 
-from flask import Blueprint, abort, current_app, g, request, send_file
+from flask import Blueprint, abort, g, request
 
 from ..auth import has_full_access, login_required
 from ..db import get_db, row, rows
+from .dokumente import liste as dokument_liste
 from .wartung import Eingabefehler, _pfadteil, fotos_speichern
 
 bp = Blueprint("ausruestung", __name__)
@@ -25,6 +26,10 @@ FELDER = [
 
 NAME_SQL = "TRIM(COALESCE({a}.TCVorname,'') || ' ' || COALESCE({a}.TCNachname,''))"
 
+# Hauptfoto: das markierte, sonst das zuerst hochgeladene
+HAUPTFOTO_SQL = """SELECT f.foto_id FROM web_fotos f WHERE f.ausruestung_id={au}
+                   ORDER BY COALESCE(f.ist_uebersichtsfoto,0) DESC, f.foto_id LIMIT 1"""
+
 LISTE_SQL = f"""
     SELECT a.AUID AS id, a.AUName AS name, a.AUHersteller AS hersteller, a.AUTyp AS modell,
            a.AUInventarnummer AS inventarnummer, a.AUSeriennummer AS seriennummer,
@@ -32,7 +37,9 @@ LISTE_SQL = f"""
            a.AUAusruestungstyp AS typ_id, t.AUTName AS typ, a.AUMitarbeiter AS besitzer_id,
            {NAME_SQL.format(a='m')} AS besitzer,
            (SELECT {NAME_SQL.format(a='e')} FROM tblAusruestungUebergaben u JOIN "tblMitarbeiter" e ON e.TCID=u.AUGAnMitarbeiter
-            WHERE u.AUGAusruestung=a.AUID AND u.AUGStatus='offen' LIMIT 1) AS uebergabe_an
+            WHERE u.AUGAusruestung=a.AUID AND u.AUGStatus='offen' LIMIT 1) AS uebergabe_an,
+           ({HAUPTFOTO_SQL.format(au='a.AUID')}) AS hauptfoto_id,
+           COALESCE(a.web_geaendert_am, a.web_erstellt_am) AS geaendert_am
     FROM tblAusruestung a
     LEFT JOIN tblAusruestungstypen t ON t.AUTID=a.AUAusruestungstyp
     LEFT JOIN "tblMitarbeiter" m ON m.TCID=a.AUMitarbeiter
@@ -103,7 +110,7 @@ def liste():
         if v:
             sql += f" AND {spalte}=?"
             args.append(v)
-    sql += " ORDER BY t.AUTName COLLATE NOCASE, a.AUName COLLATE NOCASE"
+    sql += " ORDER BY geaendert_am DESC, a.AUID DESC"
     an_mich = rows(db.execute(
         f"""SELECT u.AUGID AS id, u.AUGAusruestung AS ausruestung_id, a.AUName AS name, u.AUGGestartetAm AS gestartet_am,
                    u.AUGNotiz AS notiz, {NAME_SQL.format(a='v')} AS von
@@ -173,15 +180,12 @@ def detail(auid: int):
             (auid,),
         )),
         "fotos": rows(db.execute(
-            """SELECT foto_id AS id, originalname, beschreibung, aufnahmedatum, web_erstellt_von AS erstellt_von
-               FROM web_fotos WHERE ausruestung_id=? ORDER BY foto_id DESC""",
-            (auid,),
+            f"""SELECT foto_id AS id, originalname, beschreibung, aufnahmedatum, web_erstellt_von AS erstellt_von,
+                       CASE WHEN foto_id=({HAUPTFOTO_SQL.format(au='?')}) THEN 1 ELSE 0 END AS hauptfoto
+                FROM web_fotos WHERE ausruestung_id=? ORDER BY hauptfoto DESC, foto_id DESC""",
+            (auid, auid),
         )),
-        "dokumente": rows(db.execute(
-            """SELECT id, filename AS name, beschreibung, hochgeladen_am FROM web_attachments
-               WHERE parent_table='tblAusruestung' AND parent_pk=? ORDER BY id DESC""",
-            (auid,),
-        )),
+        "dokumente": dokument_liste(db, "tblAusruestung", auid),
     }
 
 
@@ -413,19 +417,16 @@ def fotos_hochladen(auid: int):
     return {"ok": True, "ids": neu}
 
 
-@bp.get("/dokumente/<int:did>/datei")
+@bp.post("/ausruestung/<int:auid>/hauptfoto")
 @login_required
-def dokument_datei(did: int):
-    r = get_db().execute("SELECT relative_path, filename FROM web_attachments WHERE id=?", (did,)).fetchone()
-    if r is None:
-        abort(404)
-    parts = [p for p in str(r["relative_path"] or "").replace("\\", "/").split("/") if p not in {"", "."}]
-    if parts[:1] == ["attachments"]:
-        parts = parts[1:]
-    if not parts or ".." in parts:
-        abort(404)
-    root = current_app.config["SETTINGS"].documents_path.resolve()
-    pfad = root.joinpath(*parts).resolve()
-    if root not in pfad.parents or not pfad.is_file():
-        abort(404, description="Die Datei wurde nicht gefunden.")
-    return send_file(pfad, download_name=r["filename"] or pfad.name, max_age=3600)
+def hauptfoto_setzen(auid: int):
+    db = get_db()
+    a = _laden(db, auid)
+    _nur_wenn_darf(a)
+    fid = (request.get_json(silent=True) or {}).get("foto_id")
+    if not db.execute("SELECT 1 FROM web_fotos WHERE foto_id=? AND ausruestung_id=?", (fid, auid)).fetchone():
+        raise Eingabefehler("Das Foto gehört nicht zu dieser Ausrüstung.")
+    db.execute("UPDATE web_fotos SET ist_uebersichtsfoto=CASE WHEN foto_id=? THEN 1 ELSE 0 END WHERE ausruestung_id=?",
+               (fid, auid))
+    db.commit()
+    return {"ok": True}

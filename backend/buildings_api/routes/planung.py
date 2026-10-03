@@ -29,8 +29,11 @@ def _ist(text, wert: str) -> bool:
 def _eintrag_json(r) -> dict:
     if r["auftrag_id"]:
         typ = "auftrag"
-        titel = r["ATName"] or f"Auftrag #{r['auftrag_id']}"
-        untertitel = " · ".join(x for x in (r["KSKunde"], r["KSName"]) if x)
+        # Oben (fett) Kunde – Kundensystem, darunter der Auftrag
+        auftrag = r["ATName"] or f"Auftrag #{r['auftrag_id']}"
+        kunde, system = (r["KSKunde"] or "").strip(), (r["KSName"] or "").strip()
+        ort = " – ".join(x for x in (kunde, system if system.casefold() != kunde.casefold() else "") if x)
+        titel, untertitel = (ort, auftrag) if ort else (auftrag, "")
         farbe = r["Planungsfarbe"] or "#16a34a"
     else:
         typ = "manuell" if _ist(r["AbwesenheitName"], "manuell") else "abwesenheit"
@@ -222,7 +225,7 @@ def auftraege_suche():
                 WHERE {AKTIVER_STATUS_SQL}
                   AND (? = '' OR a.ATName LIKE ? OR s.KSKunde LIKE ? OR s.KSName LIKE ?
                        OR (m.TCVorname || ' ' || m.TCNachname) LIKE ?)
-                ORDER BY s.KSKunde COLLATE NOCASE, a.ATName COLLATE NOCASE
+                ORDER BY COALESCE(a.web_geaendert_am, a.web_erstellt_am) DESC, a.ATID DESC
                 LIMIT 100
                 """,
                 (q, like, like, like, like),

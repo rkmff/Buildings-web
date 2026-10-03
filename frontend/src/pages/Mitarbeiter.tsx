@@ -1,3 +1,17 @@
+import {
+  closestCenter,
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  MouseSensor,
+  TouchSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragOverEvent,
+} from '@dnd-kit/core'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
@@ -549,41 +563,79 @@ function Systeme({ d, stamm, onGeaendert, onFehler }: { d: Detaildaten; stamm: S
 
 // ---------- Reihenfolge ----------
 
+function ReihenfolgeZeile({ p, nr, aktiv }: { p: Person; nr: number; aktiv: boolean }) {
+  const ziehen = useDraggable({ id: p.id })
+  const ziel = useDroppable({ id: p.id })
+  return (
+    <li ref={(el) => { ziehen.setNodeRef(el); ziel.setNodeRef(el) }} className={aktiv ? 'zieht' : ''}
+      {...ziehen.listeners} {...ziehen.attributes} aria-label={`${name(p)}, Platz ${nr}. Zum Verschieben ziehen.`}>
+      <Icon name="griff" size={16} className="gedaempft" />
+      <span className="mono klein gedaempft">{nr}</span>
+      <span className="flex-1">{name(p)} <small className="gedaempft">{p.funktion}</small></span>
+    </li>
+  )
+}
+
 function ReihenfolgeDialog({ stamm, onClose, onGespeichert }: { stamm: Stamm; onClose: () => void; onGespeichert: () => void }) {
   const [personen, setPersonen] = useState<Person[] | null>(null)
   const [nl, setNl] = useState<string>(() => String(stamm.niederlassungen[0]?.id ?? ''))
+  const [aktiv, setAktiv] = useState<number | null>(null)
+  const [status, setStatus] = useState('')
   const [fehler, setFehler] = useState('')
+  const [geaendert, setGeaendert] = useState(false)
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
+    useSensor(KeyboardSensor),
+  )
 
   useEffect(() => {
     api.get<{ mitarbeiter: Person[] }>('/api/mitarbeiter').then((r) => setPersonen(r.mitarbeiter.filter((p) => p.in_wochenplanung)))
   }, [])
 
-  const gruppe = (personen ?? []).filter((p) => String(p.niederlassung_id ?? '') === nl)
-  const schieben = (idx: number, richtung: -1 | 1) => {
-    const ziel = idx + richtung
-    if (ziel < 0 || ziel >= gruppe.length) return
+  const inGruppe = (p: Person) => String(p.niederlassung_id ?? '') === nl
+  const gruppe = (personen ?? []).filter(inGruppe)
+
+  // Wie im bisherigen Programm: beim Ziehen sofort umsortieren, beim Loslassen automatisch speichern
+  const ueber = (e: DragOverEvent) => {
+    if (!e.over || e.over.id === e.active.id) return
+    const von = gruppe.findIndex((p) => p.id === e.active.id)
+    const nach = gruppe.findIndex((p) => p.id === e.over!.id)
+    if (von < 0 || nach < 0) return
     const neu = [...gruppe]
-    ;[neu[idx], neu[ziel]] = [neu[ziel], neu[idx]]
-    setPersonen((alle) => [...(alle ?? []).filter((p) => String(p.niederlassung_id ?? '') !== nl), ...neu])
+    const [x] = neu.splice(von, 1)
+    neu.splice(nach, 0, x)
+    setPersonen((alle) => [...(alle ?? []).filter((p) => !inGruppe(p)), ...neu])
   }
-  const speichern = async () => {
+  const speichern = async (liste: Person[]) => {
+    setStatus('Speichere …')
+    setFehler('')
     try {
-      await api.post('/api/mitarbeiter/reihenfolge', { ids: gruppe.map((p) => p.id) })
-      onGespeichert()
+      await api.post('/api/mitarbeiter/reihenfolge', { ids: liste.map((p) => p.id) })
+      setStatus('Gespeichert')
+      setGeaendert(true)
     } catch (e) {
+      setStatus('')
       setFehler((e as Error).message)
     }
   }
+  const ende = (e: DragEndEvent) => {
+    setAktiv(null)
+    if (e.over) speichern(gruppe)
+  }
+  const schliessen = () => (geaendert ? onGespeichert() : onClose())
   const mitOhne = (personen ?? []).some((p) => p.niederlassung_id === null)
+  const gezogen = gruppe.find((p) => p.id === aktiv)
 
   return (
     <Dialog
       titel="Reihenfolge in der Wochenplanung"
-      onClose={onClose}
+      onClose={schliessen}
       aktionen={
         <>
-          <button type="button" className="knopf" onClick={onClose}>Schließen</button>
-          <button type="button" className="knopf primaer" onClick={speichern} disabled={!gruppe.length}>Reihenfolge speichern</button>
+          <span className="gedaempft klein" aria-live="polite">{status}</span>
+          <span className="abstand" />
+          <button type="button" className="knopf primaer" onClick={schliessen}>Fertig</button>
         </>
       }
     >
@@ -594,25 +646,25 @@ function ReihenfolgeDialog({ stamm, onClose, onGespeichert }: { stamm: Stamm; on
           {mitOhne && <option value="">Ohne Niederlassung</option>}
         </select>
       </label>
+      <p className="gedaempft klein">Mitarbeiter an die gewünschte Stelle ziehen. Die Reihenfolge wird sofort gespeichert.</p>
       {!personen ? (
         <p className="gedaempft">Wird geladen …</p>
       ) : gruppe.length === 0 ? (
         <p className="gedaempft">Hier ist niemand in der Wochenplanung.</p>
       ) : (
-        <ol className="reihenfolge">
-          {gruppe.map((p, i) => (
-            <li key={p.id}>
-              <span className="mono klein gedaempft">{i + 1}</span>
-              <span className="flex-1">{name(p)} <small className="gedaempft">{p.funktion}</small></span>
-              <button type="button" className="icon-knopf klein" aria-label={`${name(p)} nach oben`} disabled={i === 0} onClick={() => schieben(i, -1)}>
-                <Icon name="pfeilRunter" size={15} className="dreh" />
-              </button>
-              <button type="button" className="icon-knopf klein" aria-label={`${name(p)} nach unten`} disabled={i === gruppe.length - 1} onClick={() => schieben(i, 1)}>
-                <Icon name="pfeilRunter" size={15} />
-              </button>
-            </li>
-          ))}
-        </ol>
+        <DndContext sensors={sensors} collisionDetection={closestCenter}
+          onDragStart={(e) => setAktiv(Number(e.active.id))} onDragOver={ueber} onDragEnd={ende} onDragCancel={() => setAktiv(null)}>
+          <ol className="reihenfolge ziehbar">
+            {gruppe.map((p, i) => <ReihenfolgeZeile key={p.id} p={p} nr={i + 1} aktiv={p.id === aktiv} />)}
+          </ol>
+          <DragOverlay dropAnimation={null}>
+            {gezogen && (
+              <div className="reihenfolge-vorschau">
+                <Icon name="griff" size={16} /> {name(gezogen)}
+              </div>
+            )}
+          </DragOverlay>
+        </DndContext>
       )}
       {fehler && <p className="fehler">{fehler}</p>}
     </Dialog>

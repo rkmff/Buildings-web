@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import Dialog from '../components/Dialog'
+import Dokumente from '../components/Dokumente'
+import { FotoRaster } from '../components/FotoAblage'
 import Icon from '../components/Icon'
 import { Protokoll } from '../components/ObjektDialog'
 import { lang } from '../datum'
@@ -21,6 +23,7 @@ interface Eintrag {
   besitzer_id: number
   besitzer: string | null
   uebergabe_an: string | null
+  hauptfoto_id: number | null
 }
 
 interface Detail extends Eintrag {
@@ -50,8 +53,8 @@ interface Detaildaten {
   darf_bearbeiten: boolean
   uebergaben: { id: number; status: string; gestartet_am: string; bestaetigt_am: string | null; notiz: string | null; von_id: number; an_id: number; von: string; an: string }[]
   kalibrierungen: { id: number; datum: string; gueltig_bis: string | null; zertifikat: string | null; ergebnis: string | null; bemerkung: string | null }[]
-  fotos: { id: number; originalname: string | null; beschreibung: string | null; aufnahmedatum: string | null }[]
-  dokumente: { id: number; name: string | null; beschreibung: string | null; hochgeladen_am: string | null }[]
+  fotos: { id: number; originalname: string | null; beschreibung: string | null; aufnahmedatum: string | null; hauptfoto: number }[]
+  dokumente: { id: number }[]
 }
 
 const STATUS_LABEL: Record<string, string> = { aktiv: 'Aktiv', reparatur: 'Reparatur', ausgemustert: 'Ausgemustert' }
@@ -204,6 +207,12 @@ export default function Ausruestung() {
               {g.eintraege.map((e) => (
                 <Link key={e.id} to={`/ausruestung/${e.id}`}
                   className={`personen-zeile${e.id === ausgewaehlt ? ' aktiv' : ''}${e.status === 'ausgemustert' ? ' inaktiv' : ''}`}>
+                  {e.hauptfoto_id ? (
+                    <img className="mini-foto" src={`/api/fotos/${e.hauptfoto_id}/datei`} alt="" loading="lazy"
+                      onError={(ev) => { ev.currentTarget.style.visibility = 'hidden' }} />
+                  ) : (
+                    <span className="mini-foto leer" aria-hidden="true"><Icon name="werkzeug" size={16} /></span>
+                  )}
                   <span className="personen-text">
                     <strong>{e.name}</strong>
                     <small>{[e.hersteller, e.modell].filter(Boolean).join(' ') || e.typ || '–'}</small>
@@ -256,8 +265,8 @@ function AusruestungDetail({ id, stamm, onGeaendert, onMeldung, onZurueck }: {
   const [d, setD] = useState<Detaildaten | null>(null)
   const [fehler, setFehler] = useState('')
   const [tab, setTab] = useState<Tab>('uebergaben')
+  const [dokAnzahl, setDokAnzahl] = useState<number | null>(null)
   const [dialog, setDialog] = useState<'bearbeiten' | 'uebergabe' | 'kalibrierung' | null>(null)
-  const fotoEingabe = useRef<HTMLInputElement>(null)
 
   const laden = useCallback(() => {
     api.get<Detaildaten>(`/api/ausruestung/${id}`).then(setD).catch((e) => setFehler(e.message))
@@ -268,6 +277,7 @@ function AusruestungDetail({ id, stamm, onGeaendert, onMeldung, onZurueck }: {
   if (!d) return <p className="gedaempft">Wird geladen …</p>
   const a = d.ausruestung
   const offen = d.uebergaben.find((u) => u.status === 'offen')
+  const haupt = d.fotos.find((f) => f.hauptfoto) ?? null
 
   const neuLaden = () => {
     laden()
@@ -282,19 +292,17 @@ function AusruestungDetail({ id, stamm, onGeaendert, onMeldung, onZurueck }: {
       onMeldung((e as Error).message)
     }
   }
-  const fotosHochladen = (dateien: FileList | null) => {
-    if (!dateien?.length) return
+  const fotosHochladen = async (dateien: File[]) => {
     const daten = new FormData()
-    for (const f of Array.from(dateien)) daten.append('fotos', f)
-    aktion(() => api.hochladen(`/api/ausruestung/${id}/fotos`, daten), 'Foto gespeichert.')
-    if (fotoEingabe.current) fotoEingabe.current.value = ''
+    for (const f of dateien) daten.append('fotos', f)
+    await aktion(() => api.hochladen(`/api/objektfotos/ausruestung/${id}`, daten), 'Foto gespeichert.')
   }
 
   const tabs: [Tab, string, number][] = [
     ['uebergaben', 'Übergaben', d.uebergaben.length],
     ...(a.kalibrierpflichtig || d.kalibrierungen.length ? [['kalibrierungen', 'Kalibrierungen', d.kalibrierungen.length] as [Tab, string, number]] : []),
     ['fotos', 'Fotos', d.fotos.length],
-    ...(d.dokumente.length ? [['dokumente', 'Dokumente', d.dokumente.length] as [Tab, string, number]] : []),
+    ['dokumente', 'Dokumente', dokAnzahl ?? d.dokumente.length],
   ]
   const aktiverTab = tabs.some(([t]) => t === tab) ? tab : 'uebergaben'
 
@@ -318,7 +326,12 @@ function AusruestungDetail({ id, stamm, onGeaendert, onMeldung, onZurueck }: {
         <Icon name="links" size={16} /> Zur Übersicht
       </button>
       <div className="detail-kopf">
-        <div>
+        {haupt && (
+          <a className="hauptfoto" href={`/api/fotos/${haupt.id}/datei`} target="_blank" rel="noreferrer">
+            <img src={`/api/fotos/${haupt.id}/datei`} alt={haupt.beschreibung || a.name} />
+          </a>
+        )}
+        <div className="flex-1">
           <span className="typ-marke gross">{a.typ ?? 'Ausrüstung'}</span>
           <h1 className="seitentitel">{a.name}</h1>
           <p className="zeile">
@@ -415,35 +428,18 @@ function AusruestungDetail({ id, stamm, onGeaendert, onMeldung, onZurueck }: {
           </>
         )}
         {aktiverTab === 'fotos' && (
-          <>
-            {d.darf_bearbeiten && (
-              <div className="tab-aktionen">
-                <input ref={fotoEingabe} type="file" accept="image/*" multiple hidden onChange={(e) => fotosHochladen(e.target.files)} />
-                <button type="button" className="knopf klein" onClick={() => fotoEingabe.current?.click()}><Icon name="foto" size={15} /> Foto hinzufügen</button>
-              </div>
-            )}
-            {d.fotos.length === 0 ? <p className="gedaempft">Keine Fotos vorhanden.</p> : (
-              <div className="foto-raster">
-                {d.fotos.map((f) => (
-                  <a key={f.id} href={`/api/fotos/${f.id}/datei`} target="_blank" rel="noreferrer" className="foto-kachel">
-                    <img src={`/api/fotos/${f.id}/datei`} alt={f.beschreibung || f.originalname || 'Foto'} loading="lazy" />
-                    <span>{f.beschreibung || lang(f.aufnahmedatum) || f.originalname}</span>
-                  </a>
-                ))}
-              </div>
-            )}
-          </>
+          <FotoRaster fotos={d.fotos} darf={d.darf_bearbeiten} onDateien={fotosHochladen}
+            onLoeschen={(f) => window.confirm('Foto löschen?') && aktion(() => api.del(`/api/fotos/${f.id}`), 'Foto gelöscht.')}
+            extra={(f) => f.hauptfoto ? (
+              <span className="status-pille pille-gut">Hauptfoto</span>
+            ) : d.darf_bearbeiten && d.fotos.length > 1 ? (
+              <button type="button" className="knopf klein"
+                onClick={() => aktion(() => api.post(`/api/ausruestung/${id}/hauptfoto`, { foto_id: f.id }), 'Hauptfoto geändert.')}>
+                Als Hauptfoto
+              </button>
+            ) : null} />
         )}
-        {aktiverTab === 'dokumente' && (
-          <ul className="liste dokument-liste">
-            {d.dokumente.map((x) => (
-              <li key={x.id} className="liste-eintrag zeile-zwischen">
-                <a href={`/api/dokumente/${x.id}/datei`} target="_blank" rel="noreferrer">{x.name || 'Dokument'}</a>
-                <small className="gedaempft">{x.beschreibung || lang(x.hochgeladen_am)}</small>
-              </li>
-            ))}
-          </ul>
-        )}
+        {aktiverTab === 'dokumente' && <Dokumente art="ausruestung" id={id} onAnzahl={setDokAnzahl} />}
       </div>
       <Protokoll erstelltAm={a.erstellt_am} erstelltVon={a.erstellt_von} geaendertAm={a.geaendert_am} geaendertVon={a.geaendert_von} />
 

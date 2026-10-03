@@ -321,3 +321,63 @@ def system_entfernen(tsid: int):
         abort(404)
     db.commit()
     return {"ok": True}
+
+
+@bp.post("/systeme/<int:system_id>/techniker")
+@login_required
+def system_techniker_zuordnen(system_id: int):
+    """Techniker einem Kundensystem zuordnen (primär oder sekundär)."""
+    _voll()
+    data = request.get_json(silent=True) or {}
+    db = get_db()
+    if not db.execute('SELECT 1 FROM "tbKundenSysteme" WHERE KSID=?', (system_id,)).fetchone():
+        abort(404)
+    tcid = data.get("mitarbeiter_id")
+    _mitarbeiter(db, tcid)
+    vorhanden = db.execute("SELECT TSID FROM tblMitarbeiterSysteme WHERE TSTechniker=? AND TSSystem=?",
+                           (tcid, system_id)).fetchone()
+    primaer = 1 if data.get("primaer") else 0
+    if vorhanden:
+        db.execute("UPDATE tblMitarbeiterSysteme SET TSPrimary=? WHERE TSID=?", (primaer, vorhanden[0]))
+        tsid = vorhanden[0]
+    else:
+        tsid = db.execute("INSERT INTO tblMitarbeiterSysteme (TSSystem, TSTechniker, TSPrimary) VALUES (?, ?, ?)",
+                          (system_id, tcid, primaer)).lastrowid
+    db.commit()
+    return {"ok": True, "id": tsid}
+
+
+@bp.patch("/mitarbeiter-systeme/<int:tsid>")
+@login_required
+def system_zuordnung_aendern(tsid: int):
+    """Primär-Kennzeichen und/oder Kommentar einer Zuordnung ändern."""
+    _voll()
+    data = request.get_json(silent=True) or {}
+    db = get_db()
+    if not db.execute("SELECT 1 FROM tblMitarbeiterSysteme WHERE TSID=?", (tsid,)).fetchone():
+        abort(404)
+    if "primaer" in data:
+        db.execute("UPDATE tblMitarbeiterSysteme SET TSPrimary=? WHERE TSID=?", (1 if data["primaer"] else 0, tsid))
+    if "kommentar" in data:
+        kommentar = str(data["kommentar"] or "").strip()[:500] or None
+        db.execute("UPDATE tblMitarbeiterSysteme SET TSKommentar=? WHERE TSID=?", (kommentar, tsid))
+    db.commit()
+    return {"ok": True}
+
+
+@bp.get("/systeme/<int:system_id>/techniker-auswahl")
+@login_required
+def system_techniker_auswahl(system_id: int):
+    """Aktive Techniker der Niederlassung des Kundensystems (ohne Niederlassung am System: alle)."""
+    db = get_db()
+    s = db.execute('SELECT KSNiederlassung FROM "tbKundenSysteme" WHERE KSID=?', (system_id,)).fetchone()
+    if s is None:
+        abort(404)
+    sql = """SELECT m.TCID AS id, TRIM(COALESCE(m.TCVorname,'') || ' ' || COALESCE(m.TCNachname,'')) AS name
+             FROM "tblMitarbeiter" m WHERE COALESCE(m.TCAktiv,1)<>0"""
+    args: list = []
+    if s[0]:
+        sql += " AND m.TCNiederlassung=?"
+        args.append(s[0])
+    sql += " ORDER BY m.TCNachname COLLATE NOCASE, m.TCVorname COLLATE NOCASE"
+    return {"ok": True, "techniker": rows(db.execute(sql, args)), "nur_niederlassung": bool(s[0])}

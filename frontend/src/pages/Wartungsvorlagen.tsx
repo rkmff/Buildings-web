@@ -137,7 +137,7 @@ function VorlagenListe({ daten, onGeaendert, onMeldung }: { daten: Daten; onGeae
       <div className="tabelle-rahmen">
         <table className="tabelle">
           <thead>
-            <tr><th>Vorlage</th><th>VDMA</th><th>Tätigkeit</th><th>Aufgabentyp</th><th>Zeit</th><th className="zelle-mitte">Gilt für Anlagen</th><th className="zelle-mitte">Gilt für Geräte</th><th>Zuordnungen</th></tr>
+            <tr><th>Vorlage</th><th>VDMA</th><th>Tätigkeit</th><th>Aufgabentyp</th><th>Geschätzter Zeitaufwand</th><th className="zelle-mitte">Gilt für Anlagen</th><th className="zelle-mitte">Gilt für Geräte</th><th>Zuordnungen</th></tr>
           </thead>
           <tbody>
             {sichtbar.map((v) => (
@@ -244,7 +244,7 @@ function VorlageDialog({ daten, vorlage, onClose, onGespeichert }: {
             {daten.aufgabentypen.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
         </label>
-        <label className="feld"><span>Zeitvorgabe (Minuten)</span><input inputMode="decimal" value={w.zeitvorgabe} onChange={(e) => setze('zeitvorgabe', e.target.value)} /></label>
+        <label className="feld"><span>Geschätzter Zeitaufwand (Minuten)</span><input inputMode="decimal" value={w.zeitvorgabe} onChange={(e) => setze('zeitvorgabe', e.target.value)} /></label>
         {w.aufgabentyp === 'fuehlerkalibrierung' && (
           <>
             <label className="feld"><span>Warngrenze (K)</span><input inputMode="decimal" value={w.warn_grenze} onChange={(e) => setze('warn_grenze', e.target.value)} /></label>

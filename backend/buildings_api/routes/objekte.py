@@ -19,6 +19,11 @@ def _fotos(db, where: str, value: int) -> list[dict]:
     )
 
 
+def _dokumente(db, tabelle: str, pk: int) -> int:
+    return db.execute("SELECT COUNT(*) FROM web_attachments WHERE parent_table=? AND parent_pk=?",
+                      (tabelle, pk)).fetchone()[0]
+
+
 @bp.get("/baum")
 @login_required
 def baum():
@@ -91,6 +96,7 @@ def kunde(kunde_id: int):
                 (kunde_id,),
             )
         ),
+        "fotos": _fotos(db, "kunde_id=?", kunde_id),
     }
 
 
@@ -134,7 +140,7 @@ def system(system_id: int):
                    LEFT JOIN "tblStatusAufträge" st ON st.SAID=a.ATStatus
                    LEFT JOIN "tblTypenAufträge" ta ON ta.TAID=a.ATTyp
                    LEFT JOIN "tblMitarbeiter" m ON m.TCID=a.ATVerantwortlicherTechniker
-                   WHERE a.ATKS=? ORDER BY a.ATID DESC""",
+                   WHERE a.ATKS=? ORDER BY COALESCE(a.web_geaendert_am, a.web_erstellt_am) DESC, a.ATID DESC""",
                 (system_id,),
             )
         ),
@@ -148,16 +154,31 @@ def system(system_id: int):
         ),
         "mitarbeiter": rows(
             db.execute(
-                """SELECT m.TCID AS id, m.TCVorname || ' ' || m.TCNachname AS name, ms.TSPrimary AS primaer
+                """SELECT ms.TSID AS zuordnung_id, m.TCID AS id, m.TCVorname || ' ' || m.TCNachname AS name,
+                          COALESCE(ms.TSPrimary,0) AS primaer, m.TCEmail AS email, m.TCTelefon AS telefon,
+                          ms.TSKommentar AS kommentar
                    FROM tblMitarbeiterSysteme ms JOIN "tblMitarbeiter" m ON m.TCID=ms.TSTechniker
-                   WHERE ms.TSSystem=? ORDER BY ms.TSPrimary DESC, m.TCNachname""",
+                   WHERE ms.TSSystem=? ORDER BY COALESCE(ms.TSPrimary,0) DESC, ms.TSID""",
+                (system_id,),
+            )
+        ),
+        "aufgaben": rows(
+            db.execute(
+                """SELECT t.auftragsaufgabe_id AS id, t.titel, t.status, a.ATName AS auftrag,
+                          TRIM(COALESCE(m.TCVorname,'') || ' ' || COALESCE(m.TCNachname,'')) AS mitarbeiter
+                   FROM auftragsaufgaben t
+                   LEFT JOIN "tblAufTräge" a ON a.ATID=t.auftrag_id
+                   LEFT JOIN "tblMitarbeiter" m ON m.TCID=t.mitarbeiter_id
+                   WHERE COALESCE(t.kunden_system_id, a.ATKS)=?
+                   ORDER BY CASE WHEN t.status='erledigt' THEN 1 ELSE 0 END,
+                            COALESCE(t.web_geaendert_am, t.web_erstellt_am) DESC""",
                 (system_id,),
             )
         ),
         "fotos": _fotos(
             db,
             "kunden_system_id=? AND isp_id IS NULL AND anlage_id IS NULL AND geraet_id IS NULL "
-            "AND auftrag_id IS NULL AND wartungsaufgabe_id IS NULL",
+            "AND auftrag_id IS NULL AND wartungsaufgabe_id IS NULL AND aufgabe_id IS NULL",
             system_id,
         ),
     }
@@ -194,6 +215,7 @@ def isp(isp_id: int):
         ),
         "fotos": _fotos(db, "isp_id=? AND anlage_id IS NULL AND geraet_id IS NULL AND auftrag_id IS NULL "
                             "AND wartungsaufgabe_id IS NULL", isp_id),
+        "dokumente_anzahl": _dokumente(db, "tblISPs", isp_id),
     }
 
 
@@ -239,6 +261,7 @@ def anlage(anlage_id: int):
         "geraete": geraete,
         "fotos": _fotos(db, "anlage_id=? AND geraet_id IS NULL AND auftrag_id IS NULL "
                             "AND wartungsaufgabe_id IS NULL", anlage_id),
+        "dokumente_anzahl": _dokumente(db, "tblAnlagen", anlage_id),
     }
 
 
@@ -277,6 +300,7 @@ def geraet(geraet_id: int):
             )
         ),
         "fotos": _fotos(db, "geraet_id=? AND wartungsaufgabe_id IS NULL", geraet_id),
+        "dokumente_anzahl": _dokumente(db, "tblGeRäte", geraet_id),
     }
 
 

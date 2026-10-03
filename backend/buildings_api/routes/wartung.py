@@ -48,9 +48,7 @@ def liste():
     if q:
         sql += """ AND (a.ATName LIKE ? OR s.KSKunde LIKE ? OR s.KSName LIKE ?)"""
         params += [f"%{q}%"] * 3
-    sql += """ ORDER BY CASE WHEN a.ATVerantwortlicherTechniker=? THEN 0 ELSE 1 END,
-               COALESCE(a.web_geaendert_am, a.web_erstellt_am) DESC"""
-    params.append(g.user["TCID"])
+    sql += " ORDER BY COALESCE(a.web_geaendert_am, a.web_erstellt_am) DESC, a.ATID DESC"
     return {"ok": True, "auftraege": rows(get_db().execute(sql, params))}
 
 
@@ -115,7 +113,7 @@ def detail(atid: int):
                       k.name, k.datum, k.uhrzeit
                FROM wartungsaufgaben_kommentare k
                JOIN wartungsaufgaben w ON w.wartungsaufgabe_id=k.wartungsaufgabe_id
-               WHERE w.auftrag_id=? ORDER BY k.kommentar_id""",
+               WHERE w.auftrag_id=? ORDER BY k.kommentar_id DESC""",
             (atid,),
         )
     )
@@ -124,7 +122,7 @@ def detail(atid: int):
             """SELECT f.foto_id AS id, f.wartungsaufgabe_id AS aufgabe_id, f.originalname, f.beschreibung,
                       f.aufnahmedatum, f.im_wartungsbericht
                FROM web_fotos f JOIN wartungsaufgaben w ON w.wartungsaufgabe_id=f.wartungsaufgabe_id
-               WHERE w.auftrag_id=? ORDER BY f.foto_id""",
+               WHERE w.auftrag_id=? ORDER BY f.foto_id DESC""",
             (atid,),
         )
     )

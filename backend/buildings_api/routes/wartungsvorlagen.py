@@ -106,7 +106,7 @@ def _werte(data: dict) -> dict:
     w = {
         "kurzbezeichnung": kurz,
         "langtext": str(data.get("langtext") or "").strip() or None,
-        "zeitvorgabe": _zahl(data.get("zeitvorgabe"), "Zeitvorgabe", 0),
+        "zeitvorgabe": _zahl(data.get("zeitvorgabe"), "Geschätzter Zeitaufwand", 0),
         "aufgabentyp": typ,
         "gilt_fuer_anlagen": int(anlagen),
         "gilt_fuer_geraete": int(geraete),

@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
+import Dokumente, { type DokumentArt } from '../components/Dokumente'
+import ObjektFotos, { type FotoArt } from '../components/FotoAblage'
 import Icon from '../components/Icon'
 import ObjektDialog, { Protokoll, type ObjektTyp } from '../components/ObjektDialog'
 import { lang } from '../datum'
 import type { Foto } from '../types'
+import { systemText } from './Auftraege'
 
 interface BaumAnlage { id: number; name: string; beschreibung: string | null; geraete: number }
 interface BaumIsp { id: number; name: string; beschreibung: string | null; anlagen: BaumAnlage[] }
@@ -99,6 +102,8 @@ export default function KundenAnlagen() {
 
   const q = filter.trim().toLowerCase()
   const sichtbar = useMemo(() => (kunden ? filtern(kunden, q) : []), [kunden, q])
+  // Kunden mit genau einem System: die Systemebene entfällt im Baum
+  const einzeln = useMemo(() => new Set((kunden ?? []).filter((k) => k.systeme.length === 1).map((k) => k.id)), [kunden])
   const istOffen = (k: string) => !!q || offen.has(k)
   const umschalten = (k: string) =>
     setOffen((alt) => {
@@ -108,9 +113,10 @@ export default function KundenAnlagen() {
       return neu
     })
 
-  const knoten = (t: Typ, nid: number | null, label: string, ebene: number, kinder: boolean, zusatz?: string) => {
+  const knoten = (t: Typ, nid: number | null, label: string, ebene: number, kinder: boolean, zusatz?: string,
+    ziel?: { typ: Typ; id: number }) => {
     const k = schluessel(t, nid)
-    const aktiv = typ === t && id === nid
+    const aktiv = (typ === t && id === nid) || (!!ziel && typ === ziel.typ && id === ziel.id)
     return (
       <div className={`baum-knoten${aktiv ? ' aktiv' : ''}`} style={{ paddingLeft: 8 + ebene * 16 }}>
         {kinder ? (
@@ -124,7 +130,7 @@ export default function KundenAnlagen() {
         {nid === null ? (
           <span className="baum-label">{label}</span>
         ) : (
-          <Link to={`/objekte/${t}/${nid}`} className="baum-label" title={zusatz ? `${label} · ${zusatz}` : label}>
+          <Link to={ziel ? `/objekte/${ziel.typ}/${ziel.id}` : `/objekte/${t}/${nid}`} className="baum-label" title={zusatz ? `${label} · ${zusatz}` : label}>
             {label}
             {zusatz && <span className="gedaempft"> · {zusatz}</span>}
           </Link>
@@ -153,27 +159,40 @@ export default function KundenAnlagen() {
         <div className="baum-liste" role="tree">
           {!kunden && <p className="gedaempft">Wird geladen …</p>}
           {kunden && sichtbar.length === 0 && <p className="gedaempft">Nichts gefunden.</p>}
-          {sichtbar.map((k) => (
-            <div key={schluessel('kunde', k.id)} role="treeitem">
-              {knoten('kunde', k.id, k.name, 0, k.systeme.length > 0)}
-              {istOffen(schluessel('kunde', k.id)) &&
-                k.systeme.map((s) => (
-                  <div key={s.id}>
-                    {knoten('system', s.id, s.name, 1, s.isps.length > 0, s.ort ?? undefined)}
-                    {istOffen(schluessel('system', s.id)) &&
-                      s.isps.map((i) => (
-                        <div key={i.id}>
-                          {knoten('isp', i.id, i.name, 2, i.anlagen.length > 0, i.beschreibung ?? undefined)}
-                          {istOffen(schluessel('isp', i.id)) &&
-                            i.anlagen.map((a) => (
-                              <div key={a.id}>{knoten('anlage', a.id, a.name, 3, false, a.beschreibung ?? undefined)}</div>
-                            ))}
-                        </div>
-                      ))}
-                  </div>
-                ))}
-            </div>
-          ))}
+          {sichtbar.map((k) => {
+            const ispZweig = (i: BaumIsp, ebene: number) => (
+              <div key={i.id}>
+                {knoten('isp', i.id, i.name, ebene, i.anlagen.length > 0, i.beschreibung ?? undefined)}
+                {istOffen(schluessel('isp', i.id)) &&
+                  i.anlagen.map((a) => (
+                    <div key={a.id}>{knoten('anlage', a.id, a.name, ebene + 1, false, a.beschreibung ?? undefined)}</div>
+                  ))}
+              </div>
+            )
+            const kundeOffen = istOffen(schluessel('kunde', k.id))
+            if (einzeln.has(k.id) && k.systeme.length === 1) {
+              const s = k.systeme[0]
+              const zusatz = [s.name !== k.name ? s.name : null, s.ort].filter(Boolean).join(' · ') || undefined
+              return (
+                <div key={schluessel('kunde', k.id)} role="treeitem">
+                  {knoten('kunde', k.id, k.name, 0, s.isps.length > 0, zusatz, { typ: 'system', id: s.id })}
+                  {kundeOffen && s.isps.map((i) => ispZweig(i, 1))}
+                </div>
+              )
+            }
+            return (
+              <div key={schluessel('kunde', k.id)} role="treeitem">
+                {knoten('kunde', k.id, k.name, 0, k.systeme.length > 0)}
+                {kundeOffen &&
+                  k.systeme.map((s) => (
+                    <div key={s.id}>
+                      {knoten('system', s.id, s.name, 1, s.isps.length > 0, s.ort ?? undefined)}
+                      {istOffen(schluessel('system', s.id)) && s.isps.map((i) => ispZweig(i, 2))}
+                    </div>
+                  ))}
+              </div>
+            )
+          })}
         </div>
       </aside>
       <section className="objekt-detail">
@@ -237,7 +256,7 @@ function Detail({ typ, id, rechte, onGeaendert }: { typ: Typ; id: number; rechte
     else laden()
   }
 
-  const sicht = ansicht(typ, daten, { rechte, oeffne: setDialog })
+  const sicht = ansicht(typ, daten, { rechte, oeffne: setDialog, laden })
   const obj = daten[typ]
   const tabs = sicht.tabs.filter(Boolean) as Tab[]
   const aktiverTab = tabs[Math.min(tab, tabs.length - 1)]
@@ -308,7 +327,7 @@ interface Tab { label: string; anzahl: number; inhalt: ReactNode; aktion?: React
 
 type Rechte = Partial<Record<ObjektTyp, boolean>>
 
-interface Kontext { rechte: Rechte; oeffne: (z: DialogZustand) => void }
+interface Kontext { rechte: Rechte; oeffne: (z: DialogZustand) => void; laden: () => void }
 
 function NeuKnopf({ ctx, label, zustand }: { ctx: Kontext; label: string; zustand: DialogZustand }) {
   if (!ctx.rechte[zustand.typ]) return null
@@ -345,19 +364,6 @@ function Ergebnis({ wert }: { wert: string | null }) {
   return <span className={`ergebnis ergebnis-${wert.toLowerCase()}`}>{wert}</span>
 }
 
-function Fotos({ fotos }: { fotos: Foto[] }) {
-  if (!fotos.length) return <p className="gedaempft">Keine Fotos vorhanden.</p>
-  return (
-    <div className="foto-raster">
-      {fotos.map((f) => (
-        <a key={f.id} href={`/api/fotos/${f.id}/datei`} target="_blank" rel="noreferrer" className="foto-kachel">
-          <img src={`/api/fotos/${f.id}/datei`} alt={f.beschreibung || f.originalname || 'Foto'} loading="lazy" />
-          <span>{f.beschreibung || lang(f.aufnahmedatum) || f.originalname}</span>
-        </a>
-      ))}
-    </div>
-  )
-}
 
 function ansprechpartnerTab(liste: any[], ctx: Kontext, zuordnung: { kunde_id?: number; system_id?: number }): Tab {
   return {
@@ -381,8 +387,149 @@ function ansprechpartnerTab(liste: any[], ctx: Kontext, zuordnung: { kunde_id?: 
   }
 }
 
-function fotosTab(fotos: Foto[]): Tab {
-  return { label: 'Fotos', anzahl: fotos.length, inhalt: <Fotos fotos={fotos} /> }
+function fotosTab(art: FotoArt, id: number, fotos: Foto[], ctx: Kontext): Tab {
+  return {
+    label: 'Fotos',
+    anzahl: fotos.length,
+    inhalt: <ObjektFotos art={art} id={id} onAnzahl={(n) => n !== fotos.length && ctx.laden()} />,
+  }
+}
+
+function dokumenteTab(art: DokumentArt, id: number, anzahl: number, ctx: Kontext): Tab {
+  return { label: 'Dokumente', anzahl, inhalt: <Dokumente art={art} id={id} onAnzahl={(n) => n !== anzahl && ctx.laden()} /> }
+}
+
+interface SystemTechniker {
+  zuordnung_id: number
+  id: number
+  name: string
+  primaer: number
+  email: string | null
+  telefon: string | null
+  kommentar: string | null
+}
+
+/** mailto mit Haupttechnikern als Empfänger und Vertretungen in Kopie, wie im bisherigen Programm */
+function mailAnTechniker(liste: SystemTechniker[], betreff: string) {
+  const adressen = (p: boolean) => liste.filter((m) => !!m.primaer === p && m.email).map((m) => m.email!.trim())
+  let an = adressen(true)
+  let cc = adressen(false)
+  if (!an.length) [an, cc] = [cc, []]
+  if (!an.length) return null
+  const p = new URLSearchParams()
+  if (cc.length) p.set('cc', cc.join(','))
+  p.set('subject', betreff)
+  return `mailto:${an.join(',')}?${p.toString().replace(/\+/g, '%20')}`
+}
+
+function KommentarFeld({ wert, onSpeichern }: { wert: string | null; onSpeichern: (t: string) => void }) {
+  const [text, setText] = useState(wert ?? '')
+  useEffect(() => setText(wert ?? ''), [wert])
+  const fertig = () => { if (text.trim() !== (wert ?? '')) onSpeichern(text.trim()) }
+  return (
+    <input className="tabellen-eingabe" value={text} maxLength={500} placeholder="z. B. erster Ansprechpartner"
+      aria-label="Kommentar zur Zuordnung" onChange={(e) => setText(e.target.value)} onBlur={fertig}
+      onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} />
+  )
+}
+
+function TechnikerListe({ systemId, liste, betreff, darf, onGeaendert }: {
+  systemId: number
+  liste: SystemTechniker[]
+  betreff: string
+  darf: boolean
+  onGeaendert: () => void
+}) {
+  const [auswahl, setAuswahl] = useState<{ id: number; name: string }[] | null>(null)
+  const [nurNl, setNurNl] = useState(false)
+  const [neu, setNeu] = useState('')
+  const [fehler, setFehler] = useState('')
+  useEffect(() => {
+    if (!darf) return
+    api.get<{ techniker: { id: number; name: string }[]; nur_niederlassung: boolean }>(`/api/systeme/${systemId}/techniker-auswahl`)
+      .then((r) => { setAuswahl(r.techniker); setNurNl(r.nur_niederlassung) })
+      .catch(() => setAuswahl([]))
+  }, [darf, systemId])
+  const aktion = async (fn: () => Promise<unknown>) => {
+    setFehler('')
+    try {
+      await fn()
+      onGeaendert()
+    } catch (e) {
+      setFehler((e as Error).message)
+    }
+  }
+  const hinzufuegen = () => {
+    if (!neu) return
+    aktion(() => api.post(`/api/systeme/${systemId}/techniker`, { mitarbeiter_id: Number(neu), primaer: false })).then(() => setNeu(''))
+  }
+  const mail = mailAnTechniker(liste, betreff)
+  const zugeordnet = new Set(liste.map((m) => m.id))
+  const frei = auswahl?.filter((t) => !zugeordnet.has(t.id)) ?? []
+
+  return (
+    <div className="system-techniker">
+      <div className="zeile-zwischen">
+        {mail ? (
+          <a className="knopf klein primaer" href={mail}><Icon name="team" size={15} /> Email an</a>
+        ) : (
+          <span className="gedaempft klein">Keine E-Mail-Adressen hinterlegt.</span>
+        )}
+        {darf && (
+          <span className="zeile">
+            <select aria-label="Techniker zuordnen" className="status-wahl" value={neu} onChange={(e) => setNeu(e.target.value)}>
+              <option value="">{nurNl ? 'Techniker der Niederlassung …' : 'Techniker wählen …'}</option>
+              {frei.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <button type="button" className="knopf klein" disabled={!neu} onClick={hinzufuegen}>Hinzufügen</button>
+          </span>
+        )}
+      </div>
+      {fehler && <p className="fehler" role="alert">{fehler}</p>}
+      {liste.length === 0 ? <p className="gedaempft">Keine Techniker zugeordnet.</p> : (
+        <div className="tabelle-rahmen">
+          <table className="tabelle">
+            <thead>
+              <tr><th>Techniker</th><th className="spalte-schmal">Primär</th><th>Kommentar</th>{darf && <th />}</tr>
+            </thead>
+            <tbody>
+              {liste.map((m) => (
+                <tr key={m.zuordnung_id}>
+                  <td>
+                    <strong>{m.name}</strong>
+                    <small className="gedaempft block">
+                      {m.email && <a href={`mailto:${m.email}`}>{m.email}</a>}
+                      {m.email && m.telefon && ' · '}
+                      {m.telefon && <a href={`tel:${m.telefon}`}>{m.telefon}</a>}
+                    </small>
+                  </td>
+                  <td className="spalte-schmal">
+                    <input type="checkbox" className="tabellen-haken" checked={!!m.primaer} disabled={!darf}
+                      aria-label={`${m.name} primär`}
+                      onChange={(e) => aktion(() => api.patch(`/api/mitarbeiter-systeme/${m.zuordnung_id}`, { primaer: e.target.checked }))} />
+                  </td>
+                  <td>
+                    {darf ? (
+                      <KommentarFeld wert={m.kommentar}
+                        onSpeichern={(t) => aktion(() => api.patch(`/api/mitarbeiter-systeme/${m.zuordnung_id}`, { kommentar: t }))} />
+                    ) : (m.kommentar || <span className="gedaempft">–</span>)}
+                  </td>
+                  {darf && (
+                    <td className="aktionen-zelle">
+                      <button type="button" className="icon-knopf klein" aria-label={`${m.name} entfernen`}
+                        onClick={() => window.confirm(`${m.name} von diesem System entfernen?`) && aktion(() => api.del(`/api/mitarbeiter-systeme/${m.zuordnung_id}`))}>
+                        <Icon name="papierkorb" size={15} />
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function ansicht(typ: Typ, d: any, ctx: Kontext): {
@@ -419,14 +566,16 @@ function ansicht(typ: Typ, d: any, ctx: Kontext): {
             ),
           },
           ansprechpartnerTab(d.ansprechpartner, ctx, { kunde_id: k.KUID }),
+          fotosTab('kunde', k.KUID, d.fotos ?? [], ctx),
         ],
       }
     }
     case 'system': {
       const s = d.system
+      const einziges = s.KSKunde && s.KSName === s.KSKunde
       return {
         titel: s.KSName,
-        untertitel: s.KSKunde,
+        untertitel: einziges ? undefined : s.KSKunde,
         pfad: s.KSKundeID ? [{ label: s.KSKunde, to: `/objekte/kunde/${s.KSKundeID}` }, { label: s.KSName }] : [],
         felder: [
           ['Ort', s.KSOrt],
@@ -456,23 +605,31 @@ function ansicht(typ: Typ, d: any, ctx: Kontext): {
               <Tabelle
                 spalten={['Auftrag', 'Typ', 'Status', 'Verantwortlich']}
                 leer="Keine Aufträge."
-                zeilen={d.auftraege.map((a: any) => [a.name, a.typ, a.status, a.techniker])}
+                zeilen={d.auftraege.map((a: any) => [<Link to={`/auftraege/${a.id}`}>{a.name}</Link>, a.typ, a.status, a.techniker])}
               />
             ),
           },
           ansprechpartnerTab(d.ansprechpartner, ctx, { system_id: s.KSID }),
           {
-            label: 'Techniker',
-            anzahl: d.mitarbeiter.length,
+            label: 'Aufgaben',
+            anzahl: d.aufgaben.length,
             inhalt: (
               <Tabelle
-                spalten={['Name', 'Rolle']}
-                leer="Keine Techniker zugeordnet."
-                zeilen={d.mitarbeiter.map((m: any) => [m.name, m.primaer ? 'Haupttechniker' : 'Vertretung'])}
+                spalten={['Aufgabe', 'Status', 'Auftrag', 'Zuständig']}
+                leer="Keine Aufgaben."
+                zeilen={d.aufgaben.map((t: any) => [<Link to={`/aufgaben/${t.id}`}>{t.titel}</Link>, t.status, t.auftrag, t.mitarbeiter])}
               />
             ),
           },
-          fotosTab(d.fotos),
+          {
+            label: 'Techniker',
+            anzahl: d.mitarbeiter.length,
+            inhalt: (
+              <TechnikerListe systemId={s.KSID} liste={d.mitarbeiter} betreff={systemText(s.KSKunde, s.KSName)}
+                darf={!!ctx.rechte.system} onGeaendert={ctx.laden} />
+            ),
+          },
+          fotosTab('system', s.KSID, d.fotos, ctx),
         ],
       }
     }
@@ -481,7 +638,7 @@ function ansicht(typ: Typ, d: any, ctx: Kontext): {
       return {
         titel: i.ISName,
         untertitel: i.ISBeschreibung,
-        pfad: [{ label: i.kunde_name }, { label: i.system_name, to: `/objekte/system/${i.ISKS}` }, { label: i.ISName }],
+        pfad: [{ label: systemText(i.kunde_name, i.system_name), to: `/objekte/system/${i.ISKS}` }, { label: i.ISName }],
         felder: [
           ['Typ', i.typ],
           ['BMS', i.bms],
@@ -500,7 +657,8 @@ function ansicht(typ: Typ, d: any, ctx: Kontext): {
               />
             ),
           },
-          fotosTab(d.fotos),
+          fotosTab('isp', i.ISID, d.fotos, ctx),
+          dokumenteTab('isp', i.ISID, d.dokumente_anzahl ?? 0, ctx),
         ],
       }
     }
@@ -510,8 +668,7 @@ function ansicht(typ: Typ, d: any, ctx: Kontext): {
         titel: a.ANName,
         untertitel: a.ANBeschreibung,
         pfad: [
-          { label: a.kunde_name },
-          { label: a.system_name, to: `/objekte/system/${a.system_id}` },
+          { label: systemText(a.kunde_name, a.system_name), to: `/objekte/system/${a.system_id}` },
           { label: a.isp_name, to: `/objekte/isp/${a.isp_id}` },
           { label: a.ANName },
         ],
@@ -536,7 +693,8 @@ function ansicht(typ: Typ, d: any, ctx: Kontext): {
               />
             ),
           },
-          fotosTab(d.fotos),
+          fotosTab('anlage', a.ANID, d.fotos, ctx),
+          dokumenteTab('anlage', a.ANID, d.dokumente_anzahl ?? 0, ctx),
         ],
       }
     }
@@ -582,7 +740,8 @@ function ansicht(typ: Typ, d: any, ctx: Kontext): {
               />
             ),
           },
-          fotosTab(d.fotos),
+          fotosTab('geraet', g.GRID, d.fotos, ctx),
+          dokumenteTab('geraet', g.GRID, d.dokumente_anzahl ?? 0, ctx),
         ],
       }
     }

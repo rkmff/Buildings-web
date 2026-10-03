@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from './auth'
 import Layout from './components/Layout'
 import Ausruestung from './pages/Ausruestung'
+import Aufgabe from './pages/Aufgabe'
 import Auftraege from './pages/Auftraege'
 import Einstellungen from './pages/Einstellungen'
 import KundenAnlagen from './pages/KundenAnlagen'
@@ -31,6 +32,7 @@ export default function App() {
         <Route path="passwort" element={<PasswortAendern />} />
         <Route path="auftraege" element={<Auftraege />} />
         <Route path="auftraege/:id" element={<Auftraege />} />
+        <Route path="aufgaben/:id" element={<Aufgabe />} />
         <Route path="wartung" element={<WartungListe />} />
         <Route path="wartung/:id" element={<WartungAusfuehren key="wartung" />} />
         <Route path="wartungsvorlagen" element={<ZuStammdaten />} />

@@ -4,7 +4,7 @@ import { useAuth } from '../auth'
 import Icon from './Icon'
 
 const NAV = [
-  { to: '/', label: 'Meine Seite', icon: 'home', end: true },
+  { to: '/', label: 'Start', icon: 'home', end: true },
   { to: '/objekte', label: 'Kunden & Anlagen', icon: 'gebaeude' },
   { to: '/auftraege', label: 'Aufträge', icon: 'auftrag' },
   { to: '/wartung', label: 'Wartung', icon: 'wartung' },
