@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, ApiError } from '../api'
 import Dialog from '../components/Dialog'
+import { FotoRaster } from '../components/FotoAblage'
 import Icon from '../components/Icon'
 import ObjektDialog from '../components/ObjektDialog'
 import { lang } from '../datum'
@@ -91,11 +92,12 @@ interface Daten {
   darf_alles: boolean
 }
 
+// Reihenfolge von links nach rechts wie im Wartungsbericht gewünscht
 const ERGEBNISSE: { wert: Ergebnis; label: string }[] = [
-  { wert: 'gut', label: 'gut' },
-  { wert: 'achtung', label: 'Achtung' },
-  { wert: 'schlecht', label: 'schlecht' },
-  { wert: 'neutral', label: 'neutral' },
+  { wert: 'neutral', label: 'Neutral' },
+  { wert: 'schlecht', label: 'Nicht in Ordnung' },
+  { wert: 'achtung', label: 'Bedingt in Ordnung' },
+  { wert: 'gut', label: 'In Ordnung' },
 ]
 
 const MODI: { wert: Modus; label: string; typen: Typ[] }[] = [
@@ -489,7 +491,7 @@ function StatusLeiste({ status, zeiten, offen, veraltet, onAusfuehren, onAktuali
     <div className={`karte wartung-status status-${status}`}>
       <div className="wartung-status-info">
         <WartungPille status={status} />
-        {zeiten.soll_minuten > 0 && <span className="klein">Zeitvorgabe <strong>{minuten(zeiten.soll_minuten)}</strong></span>}
+        {zeiten.soll_minuten > 0 && <span className="klein">Geschätzter Zeitaufwand <strong>{minuten(zeiten.soll_minuten)}</strong></span>}
         {status === 'pausiert' && <small className="gedaempft">Zum Weitermachen auf „Fortsetzen“ klicken.</small>}
         {veraltet > 0 && <small className="warnung">{veraltet === 1 ? "1 Aufgabe passt" : `${veraltet} Aufgaben passen`} nicht mehr zur Matrix</small>}
       </div>
@@ -575,7 +577,7 @@ function AusfuehrenDialog({ auftragId, modus, onClose, onErzeugt }: {
             <span><strong>Gerätebasiert</strong><small className="gedaempft">{anzahl(v.geraete.aufgaben, 'Aufgabe', 'Aufgaben')} für {anzahl(v.geraete.objekte, 'Gerät', 'Geräte')} · {minuten(v.geraete.minuten)}</small></span>
           </label>
           <p className="hinweis-box">
-            {n ? `Es ${n === 1 ? 'wird 1 Aufgabe' : `werden ${n} Aufgaben`} für ${objekte} erzeugt, Zeitvorgabe gesamt ${minuten(min)}.`
+            {n ? `Es ${n === 1 ? 'wird 1 Aufgabe' : `werden ${n} Aufgaben`} für ${objekte} erzeugt, geschätzter Zeitaufwand gesamt ${minuten(min)}.`
               : v.vorhanden ? `Es fehlen keine Aufgaben, ${v.vorhanden} sind schon vorhanden.` : 'Nach den Matrizen entstehen für dieses System keine Aufgaben.'}
             {modus === 'ausfuehren' && v.vorhanden > 0 && n > 0 ? ` ${v.vorhanden} sind schon vorhanden.` : ''}
           </p>
@@ -648,8 +650,9 @@ function AufgabeKarte({ t, daten, veraltet, neu, fruehereZeigen, onAktion, onNeu
           {veraltet && !fertig && kommentare.length === 0 && fotos.length === 0 && (
             <button type="button" className="knopf klein gefahr" onClick={onEntfernen}>Entfernen</button>
           )}
+          <button type="button" className="knopf klein" onClick={onBearbeiten}>{t.geraet_id ? 'Gerät' : 'Anlage'} bearbeiten</button>
           {fertig && (
-            <button type="button" className="knopf klein" onClick={oeffnen} disabled={laeuft}>Wieder öffnen</button>
+            <button type="button" className="knopf klein" onClick={oeffnen} disabled={laeuft} title="Ergebnis entfernen, Aufgabe wieder offen">Zurücksetzen</button>
           )}
         </div>
       </div>
@@ -657,7 +660,7 @@ function AufgabeKarte({ t, daten, veraltet, neu, fruehereZeigen, onAktion, onNeu
       {messung && <Messformular t={t} onAktion={onAktion} />}
       {messung && !fertig && (
         <div className="neutral-zeile">
-          <button type="button" className="ergebnis-knopf ergebnis-neutral" disabled={laeuft} onClick={() => ergebnis('neutral')}>neutral</button>
+          <button type="button" className="ergebnis-knopf ergebnis-neutral" disabled={laeuft} onClick={() => ergebnis('neutral')}>Neutral</button>
           <small className="gedaempft">ohne Messwerte abschließen, erscheint nicht im Bericht</small>
         </div>
       )}
@@ -682,7 +685,6 @@ function AufgabeKarte({ t, daten, veraltet, neu, fruehereZeigen, onAktion, onNeu
           <small className="gedaempft">Erledigt {lang(t.erledigt_datum)} {t.erledigt_uhrzeit?.slice(0, 5)}{t.techniker ? ` · ${t.techniker}` : ''}</small>
         ) : <span />}
         <div className="zeile">
-          <button type="button" className="knopf klein" onClick={onBearbeiten}>{t.geraet_id ? 'Gerät' : 'Anlage'} bearbeiten</button>
           {t.beschreibung && (
             <button type="button" className={`knopf klein${offen === 'info' ? ' aktiv' : ''}`} aria-expanded={offen === 'info'} onClick={() => umschalten('info')}>Info</button>
           )}
@@ -946,34 +948,15 @@ function Fotos({ aufgabeId, fotos, onNeuLaden, onFehler }: {
   onNeuLaden: () => void
   onFehler: (t: string) => void
 }) {
-  const eingabe = useRef<HTMLInputElement>(null)
-  const [laeuft, setLaeuft] = useState(false)
-
-  const hochladen = async (dateien: FileList | File[] | null) => {
-    if (!dateien?.length) return
+  const hochladen = async (dateien: File[]) => {
     const daten = new FormData()
-    for (const d of Array.from(dateien)) daten.append('fotos', d)
-    setLaeuft(true)
+    for (const d of dateien) daten.append('fotos', d)
     try {
       await api.hochladen(`/api/wartungsaufgaben/${aufgabeId}/fotos`, daten)
       onNeuLaden()
     } catch (err) {
       onFehler((err as Error).message)
     }
-    setLaeuft(false)
-    if (eingabe.current) eingabe.current.value = ''
-  }
-  // Screenshot aus der Zwischenablage (Strg+V), z. B. von der GLT-Oberfläche
-  const einfuegen = (e: React.ClipboardEvent) => {
-    const stempel = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')
-    const bilder = Array.from(e.clipboardData.items)
-      .filter((i) => i.kind === 'file' && i.type.startsWith('image/'))
-      .map((i) => i.getAsFile())
-      .filter((f): f is File => !!f)
-      .map((f, n) => new File([f], `Screenshot_${stempel}${n ? `_${n + 1}` : ''}.${f.type.split('/')[1] || 'png'}`, { type: f.type }))
-    if (!bilder.length) return
-    e.preventDefault()
-    hochladen(bilder)
   }
   const bericht = async (f: WartungFoto, an: boolean) => {
     try {
@@ -994,33 +977,13 @@ function Fotos({ aufgabeId, fotos, onNeuLaden, onFehler }: {
   }
 
   return (
-    <div className="wartung-bereich" onPaste={einfuegen}>
-      <div className="wartung-fotos">
-        {fotos.map((f) => (
-          <figure key={f.id} className="wartung-foto">
-            <a href={`/api/fotos/${f.id}/datei`} target="_blank" rel="noreferrer">
-              <img src={`/api/fotos/${f.id}/datei`} alt={f.beschreibung || f.originalname} loading="lazy" />
-            </a>
-            <figcaption className="zeile-zwischen">
-              <label className="aufgabe klein">
-                <input type="checkbox" checked={!!f.im_wartungsbericht} onChange={(e) => bericht(f, e.target.checked)} /> im Bericht
-              </label>
-              <button type="button" className="icon-knopf klein" aria-label="Foto löschen" onClick={() => loeschen(f)}>
-                <Icon name="papierkorb" size={15} />
-              </button>
-            </figcaption>
-          </figure>
-        ))}
-        <button type="button" className="foto-neu" onClick={() => eingabe.current?.click()} disabled={laeuft}>
-          <Icon name="foto" size={22} />
-          <span>{laeuft ? 'Lädt hoch …' : 'Foto aufnehmen oder wählen'}</span>
-        </button>
-        <div className="foto-neu einfuege-zone nur-desktop" tabIndex={0} role="button" aria-label="Screenshot einfügen: hier klicken, dann Strg+V">
-          <span className="mono">Strg+V</span>
-          <span>Screenshot hier einfügen</span>
-        </div>
-      </div>
-      <input ref={eingabe} type="file" accept="image/*" multiple hidden onChange={(e) => hochladen(e.target.files)} />
+    <div className="wartung-bereich">
+      <FotoRaster fotos={fotos} darf onDateien={hochladen} onLoeschen={loeschen}
+        extra={(f) => (
+          <label className="aufgabe klein">
+            <input type="checkbox" checked={!!f.im_wartungsbericht} onChange={(e) => bericht(f, e.target.checked)} /> im Bericht
+          </label>
+        )} />
     </div>
   )
 }

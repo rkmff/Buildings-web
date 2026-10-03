@@ -623,3 +623,36 @@ def test_system_techniker(client):
     login(client, "RKO")
     assert client.delete(f"/api/mitarbeiter-systeme/{m['zuordnung_id']}").status_code == 200
     assert all(x["id"] != frf for x in client.get(f"/api/systeme/{sid}").json["mitarbeiter"])
+
+
+def test_objektfotos(client):
+    import io
+
+    from PIL import Image
+
+    def bild():
+        puffer = io.BytesIO()
+        Image.new("RGB", (40, 30), "teal").save(puffer, "PNG")
+        puffer.seek(0)
+        return puffer
+
+    login(client, "FRF")
+    kunde = client.get("/api/baum").json["kunden"][0]
+    kid, sid = kunde["id"], kunde["systeme"][0]["id"]
+    r = client.post(f"/api/objektfotos/kunde/{kid}", data={"fotos": (bild(), "Screenshot_1.png")},
+                    content_type="multipart/form-data")
+    assert r.status_code == 200 and len(r.json["fotos"]) == 1 and r.json["fotos"][0]["darf_loeschen"]
+    fid = r.json["fotos"][0]["id"]
+    assert any(f["id"] == fid for f in client.get(f"/api/kunden/{kid}").json["fotos"])
+    # Kundenfotos tauchen nicht am System auf
+    assert all(f["id"] != fid for f in client.get(f"/api/objektfotos/system/{sid}").json["fotos"])
+    assert client.get(f"/api/fotos/{fid}/datei").status_code == 200
+    # Aufgabe ohne Auftrag
+    aid = client.post("/api/me/aufgaben", json={"titel": "Fotoaufgabe", "system_id": sid}).json["id"]
+    r = client.post(f"/api/objektfotos/aufgabe/{aid}", data={"fotos": (bild(), "a.png")}, content_type="multipart/form-data")
+    assert len(r.json["fotos"]) == 1
+    assert client.post(f"/api/objektfotos/aufgabe/{aid}", data={"fotos": (io.BytesIO(b"x"), "a.png")},
+                       content_type="multipart/form-data").status_code == 400
+    assert client.get("/api/objektfotos/unbekannt/1").status_code == 404
+    assert client.delete(f"/api/fotos/{fid}").status_code == 200
+    assert client.get(f"/api/objektfotos/kunde/{kid}").json["fotos"] == []

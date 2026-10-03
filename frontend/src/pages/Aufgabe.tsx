@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, ApiError } from '../api'
 import Dokumente from '../components/Dokumente'
+import ObjektFotos from '../components/FotoAblage'
 import Icon from '../components/Icon'
 import { Protokoll } from '../components/ObjektDialog'
 import { systemText } from './Auftraege'
@@ -155,6 +156,11 @@ export default function Aufgabe() {
         )}
         <Protokoll erstelltAm={t.erstellt_am} erstelltVon={t.erstellt_von} geaendertAm={t.geaendert_am} geaendertVon={t.geaendert_von} />
       </div>
+
+      <section className="karte">
+        <h2 className="abschnitt-titel">Fotos</h2>
+        <ObjektFotos art="aufgabe" id={t.id} />
+      </section>
 
       <section className="karte">
         <h2 className="abschnitt-titel">Dokumente</h2>

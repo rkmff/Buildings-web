@@ -14,6 +14,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import Dialog from '../components/Dialog'
 import Dokumente from '../components/Dokumente'
+import ObjektFotos from '../components/FotoAblage'
 import Icon from '../components/Icon'
 import LinkFeld, { linkAusDrop } from '../components/LinkFeld'
 import { kurz, lang } from '../datum'
@@ -419,6 +420,7 @@ interface Detaildaten {
   aufgaben: { id: number; titel: string; beschreibung: string | null; status: string; ergebnis: string | null; mitarbeiter_id: number | null; mitarbeiter: string }[]
   planung: { id: number; start_datum: string; ende_datum: string; mitarbeiter_id: number; mitarbeiter: string }[]
   ansprechpartner: { id: number; vorname: string | null; nachname: string | null; funktion: string | null; telefon: string | null; mobil: string | null; email: string | null }[]
+  anzahl?: { fotos: number; dokumente: number }
 }
 
 const AUFGABE_STATUS = [
@@ -432,9 +434,9 @@ export function Befunde({ a }: { a: Auftrag }) {
   const neutral = a.wartung_erledigt - a.wartung_gut - a.wartung_achtung - a.wartung_schlecht
   const offen = gesamt - a.wartung_erledigt
   const teile = [
-    { label: 'gut', n: a.wartung_gut, farbe: 'var(--gut)' },
-    { label: 'Achtung', n: a.wartung_achtung, farbe: 'var(--achtung)' },
-    { label: 'schlecht', n: a.wartung_schlecht, farbe: 'var(--schlecht)' },
+    { label: 'in Ordnung', n: a.wartung_gut, farbe: 'var(--gut)' },
+    { label: 'bedingt i. O.', n: a.wartung_achtung, farbe: 'var(--bedingt)' },
+    { label: 'nicht i. O.', n: a.wartung_schlecht, farbe: 'var(--schlecht)' },
     { label: 'neutral', n: neutral, farbe: 'var(--neutral)' },
     { label: 'offen', n: offen, farbe: 'var(--surface-3)' },
   ]
@@ -469,7 +471,8 @@ function AuftragDetail({ id, stamm, onClose, onBearbeiten, onGeaendert, onFehler
   onFehler: (m: string) => void
 }) {
   const [d, setD] = useState<Detaildaten | null>(null)
-  const [tab, setTab] = useState<'details' | 'aufgaben' | 'dokumente' | 'planung' | 'kontakte'>('details')
+  const [tab, setTab] = useState<'details' | 'aufgaben' | 'fotos' | 'dokumente' | 'planung' | 'kontakte'>('details')
+  const [fotos, setFotos] = useState<number | null>(null)
   const [neueAufgabe, setNeueAufgabe] = useState('')
   const [dokumente, setDokumente] = useState<number | null>(null)
   const [regler, setRegler] = useState<number | null>(null)
@@ -573,7 +576,8 @@ function AuftragDetail({ id, stamm, onClose, onBearbeiten, onGeaendert, onFehler
             {([
               ['details', 'Details', null],
               ['aufgaben', 'Aufgaben', d.aufgaben.length],
-              ['dokumente', 'Dokumente', dokumente],
+              ['fotos', 'Fotos', fotos ?? d.anzahl?.fotos ?? null],
+              ['dokumente', 'Dokumente', dokumente ?? d.anzahl?.dokumente ?? null],
               ['planung', 'Planung', d.planung.length],
               ['kontakte', 'Kontakte', d.ansprechpartner.length],
             ] as const).map(([k, label, n]) => (
@@ -599,6 +603,7 @@ function AuftragDetail({ id, stamm, onClose, onBearbeiten, onGeaendert, onFehler
             </>
           )}
 
+          {tab === 'fotos' && <ObjektFotos art="auftrag" id={d.auftrag.id} onAnzahl={setFotos} />}
           {tab === 'dokumente' && <Dokumente art="auftrag" id={d.auftrag.id} onAnzahl={setDokumente} />}
 
           {tab === 'aufgaben' && (

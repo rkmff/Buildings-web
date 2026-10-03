@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import Dokumente, { type DokumentArt } from '../components/Dokumente'
+import ObjektFotos, { type FotoArt } from '../components/FotoAblage'
 import Icon from '../components/Icon'
 import ObjektDialog, { Protokoll, type ObjektTyp } from '../components/ObjektDialog'
 import { lang } from '../datum'
@@ -363,19 +364,6 @@ function Ergebnis({ wert }: { wert: string | null }) {
   return <span className={`ergebnis ergebnis-${wert.toLowerCase()}`}>{wert}</span>
 }
 
-function Fotos({ fotos }: { fotos: Foto[] }) {
-  if (!fotos.length) return <p className="gedaempft">Keine Fotos vorhanden.</p>
-  return (
-    <div className="foto-raster">
-      {fotos.map((f) => (
-        <a key={f.id} href={`/api/fotos/${f.id}/datei`} target="_blank" rel="noreferrer" className="foto-kachel">
-          <img src={`/api/fotos/${f.id}/datei`} alt={f.beschreibung || f.originalname || 'Foto'} loading="lazy" />
-          <span>{f.beschreibung || lang(f.aufnahmedatum) || f.originalname}</span>
-        </a>
-      ))}
-    </div>
-  )
-}
 
 function ansprechpartnerTab(liste: any[], ctx: Kontext, zuordnung: { kunde_id?: number; system_id?: number }): Tab {
   return {
@@ -399,8 +387,12 @@ function ansprechpartnerTab(liste: any[], ctx: Kontext, zuordnung: { kunde_id?: 
   }
 }
 
-function fotosTab(fotos: Foto[]): Tab {
-  return { label: 'Fotos', anzahl: fotos.length, inhalt: <Fotos fotos={fotos} /> }
+function fotosTab(art: FotoArt, id: number, fotos: Foto[], ctx: Kontext): Tab {
+  return {
+    label: 'Fotos',
+    anzahl: fotos.length,
+    inhalt: <ObjektFotos art={art} id={id} onAnzahl={(n) => n !== fotos.length && ctx.laden()} />,
+  }
 }
 
 function dokumenteTab(art: DokumentArt, id: number, anzahl: number, ctx: Kontext): Tab {
@@ -430,6 +422,17 @@ function mailAnTechniker(liste: SystemTechniker[], betreff: string) {
   return `mailto:${an.join(',')}?${p.toString().replace(/\+/g, '%20')}`
 }
 
+function KommentarFeld({ wert, onSpeichern }: { wert: string | null; onSpeichern: (t: string) => void }) {
+  const [text, setText] = useState(wert ?? '')
+  useEffect(() => setText(wert ?? ''), [wert])
+  const fertig = () => { if (text.trim() !== (wert ?? '')) onSpeichern(text.trim()) }
+  return (
+    <input className="tabellen-eingabe" value={text} maxLength={500} placeholder="z. B. erster Ansprechpartner"
+      aria-label="Kommentar zur Zuordnung" onChange={(e) => setText(e.target.value)} onBlur={fertig}
+      onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} />
+  )
+}
+
 function TechnikerListe({ systemId, liste, betreff, darf, onGeaendert }: {
   systemId: number
   liste: SystemTechniker[]
@@ -437,12 +440,16 @@ function TechnikerListe({ systemId, liste, betreff, darf, onGeaendert }: {
   darf: boolean
   onGeaendert: () => void
 }) {
-  const [alle, setAlle] = useState<{ id: number; name: string }[] | null>(null)
+  const [auswahl, setAuswahl] = useState<{ id: number; name: string }[] | null>(null)
+  const [nurNl, setNurNl] = useState(false)
   const [neu, setNeu] = useState('')
   const [fehler, setFehler] = useState('')
   useEffect(() => {
-    if (darf) api.get<{ techniker: { id: number; name: string }[] }>('/api/auftraege/stammdaten').then((r) => setAlle(r.techniker)).catch(() => setAlle([]))
-  }, [darf])
+    if (!darf) return
+    api.get<{ techniker: { id: number; name: string }[]; nur_niederlassung: boolean }>(`/api/systeme/${systemId}/techniker-auswahl`)
+      .then((r) => { setAuswahl(r.techniker); setNurNl(r.nur_niederlassung) })
+      .catch(() => setAuswahl([]))
+  }, [darf, systemId])
   const aktion = async (fn: () => Promise<unknown>) => {
     setFehler('')
     try {
@@ -452,48 +459,14 @@ function TechnikerListe({ systemId, liste, betreff, darf, onGeaendert }: {
       setFehler((e as Error).message)
     }
   }
-  const hinzufuegen = (primaer: boolean) => {
+  const hinzufuegen = () => {
     if (!neu) return
-    aktion(() => api.post(`/api/systeme/${systemId}/techniker`, { mitarbeiter_id: Number(neu), primaer })).then(() => setNeu(''))
+    aktion(() => api.post(`/api/systeme/${systemId}/techniker`, { mitarbeiter_id: Number(neu), primaer: false })).then(() => setNeu(''))
   }
   const mail = mailAnTechniker(liste, betreff)
-  const gruppe = (primaer: boolean) => {
-    const eintraege = liste.filter((m) => !!m.primaer === primaer)
-    return (
-      <div className="techniker-gruppe">
-        <h3 className="mini-titel">{primaer ? 'Primär' : 'Sekundär'} <span className="zaehler">{eintraege.length}</span></h3>
-        {eintraege.length === 0 ? <p className="gedaempft klein">Niemand zugeordnet.</p> : (
-          <ul className="techniker-liste">
-            {eintraege.map((m) => (
-              <li key={m.zuordnung_id}>
-                <span className="flex-1">
-                  <strong>{m.name}</strong>
-                  <small className="gedaempft block">
-                    {m.email && <a href={`mailto:${m.email}`}>{m.email}</a>}
-                    {m.email && m.telefon && ' · '}
-                    {m.telefon && <a href={`tel:${m.telefon}`}>{m.telefon}</a>}
-                    {m.kommentar && ` · ${m.kommentar}`}
-                  </small>
-                </span>
-                {darf && (
-                  <>
-                    <button type="button" className="knopf klein" onClick={() => aktion(() => api.patch(`/api/mitarbeiter-systeme/${m.zuordnung_id}`, { primaer: !primaer }))}>
-                      {primaer ? 'Zu sekundär' : 'Zu primär'}
-                    </button>
-                    <button type="button" className="icon-knopf klein" aria-label={`${m.name} entfernen`}
-                      onClick={() => window.confirm(`${m.name} von diesem System entfernen?`) && aktion(() => api.del(`/api/mitarbeiter-systeme/${m.zuordnung_id}`))}>
-                      <Icon name="papierkorb" size={15} />
-                    </button>
-                  </>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    )
-  }
   const zugeordnet = new Set(liste.map((m) => m.id))
+  const frei = auswahl?.filter((t) => !zugeordnet.has(t.id)) ?? []
+
   return (
     <div className="system-techniker">
       <div className="zeile-zwischen">
@@ -505,17 +478,56 @@ function TechnikerListe({ systemId, liste, betreff, darf, onGeaendert }: {
         {darf && (
           <span className="zeile">
             <select aria-label="Techniker zuordnen" className="status-wahl" value={neu} onChange={(e) => setNeu(e.target.value)}>
-              <option value="">Techniker wählen …</option>
-              {alle?.filter((t) => !zugeordnet.has(t.id)).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              <option value="">{nurNl ? 'Techniker der Niederlassung …' : 'Techniker wählen …'}</option>
+              {frei.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
-            <button type="button" className="knopf klein" disabled={!neu} onClick={() => hinzufuegen(true)}>+ Primär</button>
-            <button type="button" className="knopf klein" disabled={!neu} onClick={() => hinzufuegen(false)}>+ Sekundär</button>
+            <button type="button" className="knopf klein" disabled={!neu} onClick={hinzufuegen}>Hinzufügen</button>
           </span>
         )}
       </div>
       {fehler && <p className="fehler" role="alert">{fehler}</p>}
-      {gruppe(true)}
-      {gruppe(false)}
+      {liste.length === 0 ? <p className="gedaempft">Keine Techniker zugeordnet.</p> : (
+        <div className="tabelle-rahmen">
+          <table className="tabelle">
+            <thead>
+              <tr><th>Techniker</th><th className="spalte-schmal">Primär</th><th>Kommentar</th>{darf && <th />}</tr>
+            </thead>
+            <tbody>
+              {liste.map((m) => (
+                <tr key={m.zuordnung_id}>
+                  <td>
+                    <strong>{m.name}</strong>
+                    <small className="gedaempft block">
+                      {m.email && <a href={`mailto:${m.email}`}>{m.email}</a>}
+                      {m.email && m.telefon && ' · '}
+                      {m.telefon && <a href={`tel:${m.telefon}`}>{m.telefon}</a>}
+                    </small>
+                  </td>
+                  <td className="spalte-schmal">
+                    <input type="checkbox" className="tabellen-haken" checked={!!m.primaer} disabled={!darf}
+                      aria-label={`${m.name} primär`}
+                      onChange={(e) => aktion(() => api.patch(`/api/mitarbeiter-systeme/${m.zuordnung_id}`, { primaer: e.target.checked }))} />
+                  </td>
+                  <td>
+                    {darf ? (
+                      <KommentarFeld wert={m.kommentar}
+                        onSpeichern={(t) => aktion(() => api.patch(`/api/mitarbeiter-systeme/${m.zuordnung_id}`, { kommentar: t }))} />
+                    ) : (m.kommentar || <span className="gedaempft">–</span>)}
+                  </td>
+                  {darf && (
+                    <td className="aktionen-zelle">
+                      <button type="button" className="icon-knopf klein" aria-label={`${m.name} entfernen`}
+                        onClick={() => window.confirm(`${m.name} von diesem System entfernen?`) && aktion(() => api.del(`/api/mitarbeiter-systeme/${m.zuordnung_id}`))}>
+                        <Icon name="papierkorb" size={15} />
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
@@ -554,6 +566,7 @@ function ansicht(typ: Typ, d: any, ctx: Kontext): {
             ),
           },
           ansprechpartnerTab(d.ansprechpartner, ctx, { kunde_id: k.KUID }),
+          fotosTab('kunde', k.KUID, d.fotos ?? [], ctx),
         ],
       }
     }
@@ -616,7 +629,7 @@ function ansicht(typ: Typ, d: any, ctx: Kontext): {
                 darf={!!ctx.rechte.system} onGeaendert={ctx.laden} />
             ),
           },
-          fotosTab(d.fotos),
+          fotosTab('system', s.KSID, d.fotos, ctx),
         ],
       }
     }
@@ -644,7 +657,7 @@ function ansicht(typ: Typ, d: any, ctx: Kontext): {
               />
             ),
           },
-          fotosTab(d.fotos),
+          fotosTab('isp', i.ISID, d.fotos, ctx),
           dokumenteTab('isp', i.ISID, d.dokumente_anzahl ?? 0, ctx),
         ],
       }
@@ -680,7 +693,7 @@ function ansicht(typ: Typ, d: any, ctx: Kontext): {
               />
             ),
           },
-          fotosTab(d.fotos),
+          fotosTab('anlage', a.ANID, d.fotos, ctx),
           dokumenteTab('anlage', a.ANID, d.dokumente_anzahl ?? 0, ctx),
         ],
       }
@@ -727,7 +740,7 @@ function ansicht(typ: Typ, d: any, ctx: Kontext): {
               />
             ),
           },
-          fotosTab(d.fotos),
+          fotosTab('geraet', g.GRID, d.fotos, ctx),
           dokumenteTab('geraet', g.GRID, d.dokumente_anzahl ?? 0, ctx),
         ],
       }

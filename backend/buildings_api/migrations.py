@@ -94,6 +94,15 @@ MIGRATIONS = [
         END;
         """,
     ),
+    (
+        "004_fotos_ueberall",
+        """
+        ALTER TABLE web_fotos ADD COLUMN kunde_id INTEGER REFERENCES tblKunden(KUID) ON DELETE SET NULL;
+        ALTER TABLE web_fotos ADD COLUMN aufgabe_id INTEGER REFERENCES auftragsaufgaben(auftragsaufgabe_id) ON DELETE CASCADE;
+        CREATE INDEX IF NOT EXISTS ix_web_fotos_kunde ON web_fotos(kunde_id);
+        CREATE INDEX IF NOT EXISTS ix_web_fotos_aufgabe ON web_fotos(aufgabe_id);
+        """,
+    ),
 ]
 
 

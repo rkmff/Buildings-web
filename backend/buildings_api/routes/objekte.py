@@ -96,6 +96,7 @@ def kunde(kunde_id: int):
                 (kunde_id,),
             )
         ),
+        "fotos": _fotos(db, "kunde_id=?", kunde_id),
     }
 
 
@@ -157,7 +158,7 @@ def system(system_id: int):
                           COALESCE(ms.TSPrimary,0) AS primaer, m.TCEmail AS email, m.TCTelefon AS telefon,
                           ms.TSKommentar AS kommentar
                    FROM tblMitarbeiterSysteme ms JOIN "tblMitarbeiter" m ON m.TCID=ms.TSTechniker
-                   WHERE ms.TSSystem=? ORDER BY ms.TSPrimary DESC, m.TCNachname""",
+                   WHERE ms.TSSystem=? ORDER BY COALESCE(ms.TSPrimary,0) DESC, ms.TSID""",
                 (system_id,),
             )
         ),
@@ -177,7 +178,7 @@ def system(system_id: int):
         "fotos": _fotos(
             db,
             "kunden_system_id=? AND isp_id IS NULL AND anlage_id IS NULL AND geraet_id IS NULL "
-            "AND auftrag_id IS NULL AND wartungsaufgabe_id IS NULL",
+            "AND auftrag_id IS NULL AND wartungsaufgabe_id IS NULL AND aufgabe_id IS NULL",
             system_id,
         ),
     }

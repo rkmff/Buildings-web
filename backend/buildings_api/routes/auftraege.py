@@ -176,6 +176,12 @@ def detail(auftrag_id: int):
                 (a["system_id"],),
             )
         ),
+        "anzahl": {
+            "fotos": db.execute("SELECT COUNT(*) FROM web_fotos WHERE auftrag_id=? AND wartungsaufgabe_id IS NULL",
+                                (auftrag_id,)).fetchone()[0],
+            "dokumente": db.execute("SELECT COUNT(*) FROM web_attachments WHERE parent_table='tblAufTräge' AND parent_pk=?",
+                                    (auftrag_id,)).fetchone()[0],
+        },
     }
 
 

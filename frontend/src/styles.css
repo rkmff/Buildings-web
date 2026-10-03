@@ -16,6 +16,7 @@
   --nav-active: #2c3730;
   --gut: #15803d;
   --achtung: #b45309;
+  --bedingt: #ca8a04;
   --schlecht: #b91c1c;
   --neutral: #5b6660;
   --standby: #ea580c;
@@ -45,6 +46,7 @@
   --nav-active: #212923;
   --gut: #4ade80;
   --achtung: #fbbf24;
+  --bedingt: #facc15;
   --schlecht: #f87171;
   --neutral: #a3aea7;
   --wochenende: #151a17;
@@ -448,7 +450,8 @@ ul { margin: 0; padding: 0; list-style: none; }
 :root[data-theme='dunkel'] .ergebnis-knopf.gewaehlt { color: #111613; }
 .ergebnis-knopf:disabled:not(.gewaehlt) { opacity: 0.6; }
 .ergebnis-knopf.ergebnis-gut { --farbe: var(--gut); }
-.ergebnis-knopf.ergebnis-achtung { --farbe: var(--achtung); }
+.ergebnis-knopf.ergebnis-achtung { --farbe: var(--bedingt); }
+.ergebnis-knopf.ergebnis-achtung.gewaehlt { color: #1c1600; }
 .ergebnis-knopf.ergebnis-schlecht { --farbe: var(--schlecht); }
 .ergebnis-knopf.ergebnis-neutral { --farbe: var(--neutral); }
 .wartung-aufgabe-fuss { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
@@ -752,9 +755,6 @@ a.status-pille.verwendung:hover { background: var(--accent-soft); color: var(--a
 
 .system-techniker { padding: 14px 18px; display: flex; flex-direction: column; gap: 14px; }
 .system-techniker .zeile-zwischen { flex-wrap: wrap; gap: 8px; }
-.techniker-liste { list-style: none; margin: 4px 0 0; padding: 0; }
-.techniker-liste li { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--surface-3); flex-wrap: wrap; }
-.techniker-liste li:last-child { border-bottom: 0; }
 
 .mini-foto { width: 36px; height: 36px; flex-shrink: 0; border-radius: 6px; object-fit: cover; border: 1px solid var(--line); background: var(--surface-3); }
 .mini-foto.leer { display: grid; place-items: center; color: var(--text-2); }
@@ -772,3 +772,17 @@ a.status-pille.verwendung:hover { background: var(--accent-soft); color: var(--a
 .abschnitt-kopf { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: -6px; }
 /* Start: Karten oben kompakt halten, damit die Planung darunter sichtbar bleibt */
 .meine-seite .karten-raster .liste { max-height: 300px; overflow-y: auto; }
+.foto-ablage { display: flex; flex-direction: column; gap: 10px; border: 2px dashed transparent; border-radius: var(--radius); transition: border-color 0.1s, background 0.1s; }
+.foto-ablage.ueber { border-color: var(--accent); background: var(--accent-soft); }
+.objekt-fotos { padding: 14px 18px; }
+.karte > .objekt-fotos { padding: 0; }
+.foto-zusatz { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reihenfolge.ziehbar li { cursor: grab; background: var(--surface); touch-action: none; user-select: none; }
+.reihenfolge.ziehbar li:hover { border-color: var(--line-2); }
+.reihenfolge.ziehbar li.zieht { opacity: 0.4; border-style: dashed; border-color: var(--accent); }
+.reihenfolge-vorschau { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--accent); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); cursor: grabbing; font-weight: 600; }
+.tabellen-eingabe { width: 100%; min-width: 160px; padding: 5px 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text); font: inherit; font-size: 13px; }
+.tabellen-eingabe:hover { border-color: var(--line); }
+.tabellen-eingabe:focus { border-color: var(--accent); background: var(--surface); outline: none; }
+.tabellen-haken { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+.spalte-schmal { width: 72px; text-align: center; }
